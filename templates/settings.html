@@ -37,10 +37,14 @@
       
       <div style="display: flex; align-items: center; gap: 1.25rem; padding: 0.5rem 0 1.25rem; border-bottom: 1px solid var(--border-color); margin-bottom: 1.25rem;">
         {% if g.user['profile_picture'] %}
-          <img src="{{ g.user['profile_picture'] }}" alt="{{ g.user['full_name'] }}" style="width: 64px; height: 64px; border-radius: 50%; object-fit: cover; border: 2px solid var(--primary);" referrerpolicy="no-referrer">
+          <img src="{{ g.user['profile_picture'] }}" alt="{{ g.user['full_name'] }}" class="pfp-sync-avatar" style="width: 64px; height: 64px; border-radius: 50%; object-fit: cover; border: 2px solid var(--primary);" referrerpolicy="no-referrer">
+          <div class="pfp-sync-initials" style="width: 64px; height: 64px; border-radius: 50%; background: linear-gradient(135deg, var(--primary), #e64a19); color: white; display: none; align-items: center; justify-content: center; font-size: 1.5rem; font-weight: 800; border: 2px solid var(--primary);">
+            {{ g.user['full_name']|initials }}
+          </div>
         {% else %}
-          <div style="width: 64px; height: 64px; border-radius: 50%; background: linear-gradient(135deg, var(--primary), #e64a19); color: white; display: flex; align-items: center; justify-content: center; font-size: 1.5rem; font-weight: 800;">
-            {{ g.user['full_name'][0]|upper if g.user['full_name'] else 'A' }}
+          <img src="" alt="{{ g.user['full_name'] }}" class="pfp-sync-avatar" style="width: 64px; height: 64px; border-radius: 50%; object-fit: cover; border: 2px solid var(--primary); display: none;" referrerpolicy="no-referrer">
+          <div class="pfp-sync-initials" style="width: 64px; height: 64px; border-radius: 50%; background: linear-gradient(135deg, var(--primary), #e64a19); color: white; display: flex; align-items: center; justify-content: center; font-size: 1.5rem; font-weight: 800; border: 2px solid var(--primary);">
+            {{ g.user['full_name']|initials }}
           </div>
         {% endif %}
         <div>

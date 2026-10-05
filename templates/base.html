@@ -196,10 +196,14 @@
       <div class="sidebar-user-footer">
         <a href="{{ url_for('profile') }}" class="sidebar-user-card" title="Athlete Biometrics">
           {% if g.user['profile_picture'] %}
-            <img src="{{ g.user['profile_picture'] }}" alt="{{ g.user['full_name'] }}" class="avatar-small" style="object-fit: cover;" referrerpolicy="no-referrer">
+            <img src="{{ g.user['profile_picture'] }}" alt="{{ g.user['full_name'] }}" class="avatar-small pfp-sync-avatar" style="object-fit: cover;" referrerpolicy="no-referrer">
+            <div class="avatar-small pfp-sync-initials" style="display: none;">
+              {{ g.user['full_name']|initials }}
+            </div>
           {% else %}
-            <div class="avatar-small">
-              {{ g.user['full_name'][0]|upper if g.user['full_name'] else 'A' }}
+            <img src="" alt="{{ g.user['full_name'] }}" class="avatar-small pfp-sync-avatar" style="object-fit: cover; display: none;" referrerpolicy="no-referrer">
+            <div class="avatar-small pfp-sync-initials">
+              {{ g.user['full_name']|initials }}
             </div>
           {% endif %}
           <div class="sidebar-user-info">
@@ -256,10 +260,14 @@
           </a>
           <a href="{{ url_for('profile') }}" class="topbar-avatar-btn" title="View Profile">
             {% if g.user['profile_picture'] %}
-              <img src="{{ g.user['profile_picture'] }}" alt="{{ g.user['full_name'] }}" class="avatar-small" style="object-fit: cover;" referrerpolicy="no-referrer">
+              <img src="{{ g.user['profile_picture'] }}" alt="{{ g.user['full_name'] }}" class="avatar-small pfp-sync-avatar" style="object-fit: cover;" referrerpolicy="no-referrer">
+              <div class="avatar-small pfp-sync-initials" style="display: none;">
+                {{ g.user['full_name']|initials }}
+              </div>
             {% else %}
-              <div class="avatar-small">
-                {{ g.user['full_name'][0]|upper if g.user['full_name'] else 'A' }}
+              <img src="" alt="{{ g.user['full_name'] }}" class="avatar-small pfp-sync-avatar" style="object-fit: cover; display: none;" referrerpolicy="no-referrer">
+              <div class="avatar-small pfp-sync-initials">
+                {{ g.user['full_name']|initials }}
               </div>
             {% endif %}
           </a>

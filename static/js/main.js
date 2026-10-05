@@ -417,6 +417,275 @@ function setButtonLoading(btn, isLoading, customText) {
   }
 }
 
+// Global Toast Notifications
+function showToast(message, type = 'success') {
+  let container = document.querySelector('.flash-container');
+  if (!container) {
+    container = document.createElement('div');
+    container.className = 'flash-container';
+    const body = document.querySelector('.app-content-body') || document.querySelector('main') || document.body;
+    body.insertBefore(container, body.firstChild);
+  }
+  const alert = document.createElement('div');
+  alert.className = `alert alert-${type}`;
+  alert.style.display = 'flex';
+  alert.style.alignItems = 'center';
+  alert.style.justifyContent = 'space-between';
+  alert.innerHTML = `
+    <span>${message}</span>
+    <button type="button" class="alert-close" aria-label="Close" style="background:none;border:none;color:inherit;font-size:1.2rem;cursor:pointer;">&times;</button>
+  `;
+  container.appendChild(alert);
+  alert.querySelector('.alert-close').addEventListener('click', () => {
+    alert.style.opacity = '0';
+    alert.style.transform = 'translateY(-6px)';
+    setTimeout(() => alert.remove(), 250);
+  });
+  setTimeout(() => {
+    if (alert.parentNode) {
+      alert.style.transition = 'all 0.4s ease';
+      alert.style.opacity = '0';
+      setTimeout(() => alert.remove(), 400);
+    }
+  }, 4000);
+}
+
+// Global Avatar Synchronizer across entire DOM
+function syncAvatarEverywhere(avatarUrl, initials) {
+  const timestamp = Date.now();
+  const freshUrl = avatarUrl ? `${avatarUrl}?t=${timestamp}` : null;
+
+  if (freshUrl) {
+    // 1. Update all image avatars on page
+    document.querySelectorAll('.pfp-sync-avatar').forEach(img => {
+      img.src = freshUrl;
+      img.style.display = '';
+    });
+    // 2. Hide initials avatars
+    document.querySelectorAll('.pfp-sync-initials').forEach(div => {
+      div.style.display = 'none';
+    });
+    // Profile page specific elements
+    const pfpImg = document.getElementById('pfpCurrentImg');
+    const pfpInitials = document.getElementById('pfpInitialsFallback');
+    if (pfpImg) {
+      pfpImg.src = freshUrl;
+      pfpImg.style.display = 'block';
+    }
+    if (pfpInitials) pfpInitials.style.display = 'none';
+
+    // Update buttons
+    const removeBtn = document.getElementById('btnRemovePfp');
+    if (removeBtn) removeBtn.style.display = 'inline-flex';
+
+    const uploadText = document.getElementById('pfpUploadBtnText');
+    if (uploadText) uploadText.textContent = 'Change Photo';
+  } else {
+    // Revert to default initials avatar
+    document.querySelectorAll('.pfp-sync-avatar').forEach(img => {
+      img.style.display = 'none';
+    });
+    document.querySelectorAll('.pfp-sync-initials').forEach(div => {
+      div.style.display = 'flex';
+      if (initials) div.textContent = initials;
+    });
+    const pfpImg = document.getElementById('pfpCurrentImg');
+    const pfpInitials = document.getElementById('pfpInitialsFallback');
+    if (pfpImg) pfpImg.style.display = 'none';
+    if (pfpInitials) {
+      pfpInitials.style.display = 'flex';
+      if (initials) pfpInitials.textContent = initials;
+    }
+
+    // Hide remove button
+    const removeBtn = document.getElementById('btnRemovePfp');
+    if (removeBtn) removeBtn.style.display = 'none';
+
+    const uploadText = document.getElementById('pfpUploadBtnText');
+    if (uploadText) uploadText.textContent = 'Upload Photo';
+  }
+}
+
+// Profile Picture File Picker and AJAX Flow
+function initProfilePictureManagement() {
+  const fileInput = document.getElementById('pfpInputFile');
+  const triggerBtn = document.getElementById('btnTriggerPfpUpload');
+  const previewModal = document.getElementById('modalPfpPreview');
+  const previewImg = document.getElementById('pfpPreviewImg');
+  const previewInfo = document.getElementById('pfpPreviewInfo');
+  const confirmUploadBtn = document.getElementById('btnConfirmPfpUpload');
+  const removeModal = document.getElementById('modalPfpRemove');
+  const removeTriggerBtn = document.getElementById('btnRemovePfp');
+  const confirmRemoveBtn = document.getElementById('btnConfirmRemovePfp');
+
+  if (!fileInput) return;
+
+  let selectedFile = null;
+
+  if (triggerBtn) {
+    triggerBtn.addEventListener('click', () => {
+      fileInput.click();
+    });
+  }
+
+  // Remove photo modal trigger
+  if (removeTriggerBtn && removeModal) {
+    removeTriggerBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      removeModal.classList.add('open');
+    });
+  }
+
+  // Cancel / close preview modal
+  if (previewModal) {
+    const cancelPreviewBtns = previewModal.querySelectorAll('[data-modal-close], .btn-cancel-pfp-preview');
+    cancelPreviewBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        fileInput.value = '';
+        selectedFile = null;
+        previewModal.classList.remove('open');
+      });
+    });
+    previewModal.addEventListener('click', (e) => {
+      if (e.target === previewModal) {
+        fileInput.value = '';
+        selectedFile = null;
+        previewModal.classList.remove('open');
+      }
+    });
+  }
+
+  // Cancel / close remove modal
+  if (removeModal) {
+    const cancelRemoveBtns = removeModal.querySelectorAll('[data-modal-close], .btn-cancel-pfp-remove');
+    cancelRemoveBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        removeModal.classList.remove('open');
+      });
+    });
+  }
+
+  // File chosen in input
+  fileInput.addEventListener('change', () => {
+    if (!fileInput.files || fileInput.files.length === 0) return;
+    const file = fileInput.files[0];
+
+    // File validation: Size <= 5 MB
+    const maxSize = 5 * 1024 * 1024;
+    if (file.size > maxSize) {
+      showToast('Image must be smaller than 5 MB', 'danger');
+      fileInput.value = '';
+      return;
+    }
+
+    // File validation: Allowed image types
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/jpg'];
+    if (!allowedTypes.includes(file.type.toLowerCase())) {
+      showToast('Please select a valid image (JPG, PNG, or WEBP)', 'danger');
+      fileInput.value = '';
+      return;
+    }
+
+    selectedFile = file;
+
+    // Load preview
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      if (previewImg) previewImg.src = e.target.result;
+      if (previewInfo) {
+        const sizeKb = Math.round(file.size / 1024);
+        const sizeText = sizeKb > 1024 ? `${(sizeKb / 1024).toFixed(1)} MB` : `${sizeKb} KB`;
+        previewInfo.textContent = `${file.name} (${sizeText})`;
+      }
+      if (previewModal) previewModal.classList.add('open');
+    };
+    reader.readAsDataURL(file);
+  });
+
+  // Confirm Upload handler
+  if (confirmUploadBtn) {
+    confirmUploadBtn.addEventListener('click', async () => {
+      if (!selectedFile) return;
+
+      const originalText = confirmUploadBtn.innerHTML;
+      confirmUploadBtn.disabled = true;
+      confirmUploadBtn.innerHTML = '<span class="btn-spinner"></span> Uploading...';
+
+      const formData = new FormData();
+      formData.append('profile_picture', selectedFile);
+
+      try {
+        const response = await fetch('/profile/picture/upload', {
+          method: 'POST',
+          body: formData,
+          headers: {
+            'X-Requested-With': 'XMLHttpRequest'
+          }
+        });
+
+        const data = await response.json();
+
+        if (response.ok && data.success) {
+          syncAvatarEverywhere(data.avatar_url);
+          showToast(data.message || 'Profile picture updated successfully', 'success');
+          if (previewModal) previewModal.classList.remove('open');
+          fileInput.value = '';
+          selectedFile = null;
+        } else {
+          showToast(data.message || 'Please select a valid image', 'danger');
+        }
+      } catch (err) {
+        console.error('PFP Upload Error:', err);
+        showToast('Upload failed. Please check your connection and try again.', 'danger');
+      } finally {
+        confirmUploadBtn.disabled = false;
+        confirmUploadBtn.innerHTML = originalText;
+      }
+    });
+  }
+
+  // Confirm Remove handler
+  if (confirmRemoveBtn) {
+    confirmRemoveBtn.addEventListener('click', async () => {
+      const originalText = confirmRemoveBtn.innerHTML;
+      confirmRemoveBtn.disabled = true;
+      confirmRemoveBtn.innerHTML = '<span class="btn-spinner"></span> Removing...';
+
+      try {
+        const response = await fetch('/profile/picture/remove', {
+          method: 'POST',
+          headers: {
+            'X-Requested-With': 'XMLHttpRequest'
+          }
+        });
+
+        const data = await response.json();
+
+        if (response.ok && data.success) {
+          syncAvatarEverywhere(null, data.initials);
+          showToast(data.message || 'Profile picture removed', 'info');
+          if (removeModal) removeModal.classList.remove('open');
+        } else {
+          showToast(data.message || 'Could not remove profile picture.', 'danger');
+        }
+      } catch (err) {
+        console.error('PFP Remove Error:', err);
+        showToast('Removal failed. Please try again.', 'danger');
+      } finally {
+        confirmRemoveBtn.disabled = false;
+        confirmRemoveBtn.innerHTML = originalText;
+      }
+    });
+  }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  initProfilePictureManagement();
+});
+
 // Global exposure
 window.setButtonLoading = setButtonLoading;
+window.showToast = showToast;
+window.syncAvatarEverywhere = syncAvatarEverywhere;
+
 

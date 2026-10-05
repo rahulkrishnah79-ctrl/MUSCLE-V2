@@ -6,7 +6,15 @@
 <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 2rem; flex-wrap: wrap; gap: 1rem;">
   <div style="display: flex; align-items: center; gap: 1.25rem;">
     {% if g.user['profile_picture'] %}
-      <img src="{{ g.user['profile_picture'] }}" alt="{{ g.user['full_name'] }}" style="width: 72px; height: 72px; border-radius: 50%; border: 2px solid var(--primary); object-fit: cover; box-shadow: 0 4px 14px rgba(255, 87, 34, 0.3);" referrerpolicy="no-referrer">
+      <img src="{{ g.user['profile_picture'] }}" alt="{{ g.user['full_name'] }}" class="pfp-sync-avatar" style="width: 72px; height: 72px; border-radius: 50%; border: 2px solid var(--primary); object-fit: cover; box-shadow: 0 4px 14px rgba(255, 87, 34, 0.3);" referrerpolicy="no-referrer">
+      <div class="pfp-sync-initials" style="width: 72px; height: 72px; border-radius: 50%; background: linear-gradient(135deg, var(--primary), #d84315); color: #ffffff; display: none; align-items: center; justify-content: center; font-size: 2rem; font-weight: 800; box-shadow: 0 4px 14px rgba(255, 87, 34, 0.3); border: 2px solid var(--primary);">
+        {{ g.user['full_name']|initials }}
+      </div>
+    {% else %}
+      <img src="" alt="{{ g.user['full_name'] }}" class="pfp-sync-avatar" style="width: 72px; height: 72px; border-radius: 50%; border: 2px solid var(--primary); object-fit: cover; box-shadow: 0 4px 14px rgba(255, 87, 34, 0.3); display: none;" referrerpolicy="no-referrer">
+      <div class="pfp-sync-initials" style="width: 72px; height: 72px; border-radius: 50%; background: linear-gradient(135deg, var(--primary), #d84315); color: #ffffff; display: flex; align-items: center; justify-content: center; font-size: 2rem; font-weight: 800; box-shadow: 0 4px 14px rgba(255, 87, 34, 0.3); border: 2px solid var(--primary);">
+        {{ g.user['full_name']|initials }}
+      </div>
     {% endif %}
     <div>
       <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.25rem; flex-wrap: wrap;">
@@ -272,10 +280,46 @@
   <!-- Right Column: Athlete Summary & Scientific Formulas Card -->
   <div style="display: flex; flex-direction: column; gap: 1.5rem;">
     
-    <!-- Profile ID Badge Card -->
+    <!-- Profile ID Badge & Avatar Management Card -->
     <div class="card" style="text-align: center; padding: 2rem 1.5rem;">
-      <div style="width: 80px; height: 80px; margin: 0 auto 1.25rem; border-radius: 50%; background: linear-gradient(135deg, var(--primary), #d84315); color: #ffffff; display: flex; align-items: center; justify-content: center; font-size: 2.2rem; font-weight: 800; box-shadow: 0 4px 20px var(--primary-glow);">
-        {{ g.user['full_name'][0]|upper if g.user['full_name'] else 'A' }}
+      <!-- Interactive Profile Picture Container (104px circular avatar with hover camera overlay) -->
+      <div class="profile-pfp-container" id="pfpAvatarWrapper">
+        {% if g.user['profile_picture'] %}
+          <img id="pfpCurrentImg" src="{{ g.user['profile_picture'] }}" alt="{{ g.user['full_name'] }}" class="avatar-large pfp-sync-avatar" referrerpolicy="no-referrer">
+          <div id="pfpInitialsFallback" class="avatar-large pfp-sync-initials" style="display: none;">
+            {{ g.user['full_name']|initials }}
+          </div>
+        {% else %}
+          <img id="pfpCurrentImg" src="" alt="{{ g.user['full_name'] }}" class="avatar-large pfp-sync-avatar" style="display: none;" referrerpolicy="no-referrer">
+          <div id="pfpInitialsFallback" class="avatar-large pfp-sync-initials" style="display: flex;">
+            {{ g.user['full_name']|initials }}
+          </div>
+        {% endif %}
+
+        <!-- Hover Camera Overlay -->
+        <div class="pfp-hover-overlay" id="btnTriggerPfpUpload" title="Click to choose a new profile picture">
+          <svg viewBox="0 0 24 24" width="26" height="26" stroke="currentColor" stroke-width="2" fill="none">
+            <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
+            <circle cx="12" cy="13" r="4"></circle>
+          </svg>
+          <span style="font-size: 0.65rem; font-weight: 700; margin-top: 4px; letter-spacing: 0.03em;">Change</span>
+        </div>
+      </div>
+
+      <!-- Hidden File Input -->
+      <input type="file" id="pfpInputFile" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" style="display: none;">
+
+      <!-- PFP Control Buttons: Upload / Change & Remove -->
+      <div style="display: flex; justify-content: center; gap: 0.5rem; margin-bottom: 1.25rem; flex-wrap: wrap;">
+        <button type="button" class="btn btn-outline btn-sm" id="btnTriggerPfpUploadAction" onclick="document.getElementById('pfpInputFile').click()" title="Select an image file (JPG, PNG, WEBP, max 5MB)">
+          <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+          <span id="pfpUploadBtnText">{{ 'Change Photo' if g.user['profile_picture'] else 'Upload Photo' }}</span>
+        </button>
+
+        <button type="button" class="btn btn-outline btn-sm" id="btnRemovePfp" data-modal-target="#modalPfpRemove" style="{% if not g.user['profile_picture'] %}display: none;{% else %}display: inline-flex;{% endif %} border-color: rgba(239, 68, 68, 0.4); color: #ef4444;" title="Remove current profile picture and revert to initials">
+          <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+          Remove Photo
+        </button>
       </div>
 
       <h2 class="text-xl font-bold" style="color: var(--text-heading);">{{ g.user['full_name'] }}</h2>
@@ -423,4 +467,77 @@
     }
   });
 </script>
+
+<!-- Modal: Profile Picture Preview & Confirmation -->
+<div class="modal-backdrop" id="modalPfpPreview">
+  <div class="modal-dialog" style="max-width: 440px;">
+    <div class="modal-header">
+      <div style="display: flex; align-items: center; gap: 0.6rem;">
+        <div style="width: 36px; height: 36px; border-radius: 8px; background: rgba(255, 87, 34, 0.15); color: var(--primary); display: flex; align-items: center; justify-content: center;">
+          <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
+        </div>
+        <div>
+          <h3 class="text-base font-bold" style="color: var(--text-heading); margin: 0;">Preview Profile Picture</h3>
+          <p class="text-xs text-muted" style="margin: 0;">Confirm and upload your athlete photo</p>
+        </div>
+      </div>
+      <button type="button" class="alert-close btn-cancel-pfp-preview" data-modal-close aria-label="Close modal">&times;</button>
+    </div>
+
+    <div class="modal-body" style="text-align: center; padding: 1.5rem;">
+      <div style="width: 140px; height: 140px; margin: 0 auto 1rem; border-radius: 50%; overflow: hidden; border: 3px solid var(--primary); box-shadow: 0 4px 20px var(--primary-glow); background: var(--bg-card-alt);">
+        <img id="pfpPreviewImg" src="" alt="Avatar Preview" style="width: 100%; height: 100%; object-fit: cover;">
+      </div>
+      <p id="pfpPreviewInfo" class="text-xs font-semibold text-muted" style="margin-bottom: 0.5rem;"></p>
+      <p class="text-xs text-dim" style="line-height: 1.4;">
+        Image will be center-cropped to a square and saved securely in your profile. Maximum file size: 5 MB.
+      </p>
+    </div>
+
+    <div class="modal-footer" style="border-top: 1px solid var(--border-color); padding: 1rem 1.5rem; gap: 0.75rem;">
+      <button type="button" class="btn btn-secondary btn-cancel-pfp-preview" data-modal-close>
+        Cancel
+      </button>
+      <button type="button" class="btn btn-primary" id="btnConfirmPfpUpload">
+        Upload &amp; Save
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Remove Profile Picture Confirmation -->
+<div class="modal-backdrop" id="modalPfpRemove">
+  <div class="modal-dialog" style="max-width: 440px;">
+    <div class="modal-header">
+      <div style="display: flex; align-items: center; gap: 0.6rem;">
+        <div style="width: 36px; height: 36px; border-radius: 8px; background: rgba(239, 68, 68, 0.15); color: #ef4444; display: flex; align-items: center; justify-content: center;">
+          <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        </div>
+        <div>
+          <h3 class="text-base font-bold" style="color: var(--text-heading); margin: 0;">Remove your profile picture?</h3>
+          <p class="text-xs text-muted" style="margin: 0;">Revert to Default Avatar</p>
+        </div>
+      </div>
+      <button type="button" class="alert-close btn-cancel-pfp-remove" data-modal-close aria-label="Close modal">&times;</button>
+    </div>
+
+    <div class="modal-body">
+      <p style="font-size: 0.95rem; color: var(--text-main); margin-bottom: 0.75rem; font-weight: 600;">
+        Are you sure you want to remove your profile picture?
+      </p>
+      <div style="background: rgba(255, 255, 255, 0.04); border-left: 3px solid #ef4444; padding: 0.75rem 0.9rem; border-radius: 4px; font-size: 0.8rem; color: var(--text-muted); line-height: 1.45;">
+        ℹ️ Your uploaded photo will be deleted from disk and your profile will immediately revert to your initials avatar. Your workout and nutrition data will NOT be affected.
+      </div>
+    </div>
+
+    <div class="modal-footer" style="border-top: 1px solid var(--border-color); padding: 1rem 1.5rem; gap: 0.75rem;">
+      <button type="button" class="btn btn-secondary btn-cancel-pfp-remove" data-modal-close>
+        Cancel
+      </button>
+      <button type="button" class="btn btn-danger" id="btnConfirmRemovePfp">
+        Remove Photo
+      </button>
+    </div>
+  </div>
+</div>
 {% endblock %}

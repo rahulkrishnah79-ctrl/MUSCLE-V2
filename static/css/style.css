@@ -1854,3 +1854,79 @@ body.authenticated-app {
     animation: none !important;
   }
 }
+
+/* ==========================================================================
+   Custom Profile Picture (PFP) Component Styles
+   ========================================================================== */
+.profile-pfp-container {
+  position: relative;
+  width: 104px;
+  height: 104px;
+  margin: 0 auto 1.25rem;
+  border-radius: 50%;
+}
+
+.profile-pfp-container:hover .pfp-hover-overlay {
+  opacity: 1 !important;
+}
+
+.pfp-hover-overlay {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.65);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  cursor: pointer;
+  color: #ffffff;
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+  z-index: 5;
+}
+
+.pfp-hover-overlay:hover {
+  background: rgba(0, 0, 0, 0.78);
+}
+
+.avatar-medium {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  object-fit: cover;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 1.15rem;
+  background: linear-gradient(135deg, var(--primary), #e64a19);
+  color: #ffffff;
+  border: 2px solid var(--primary);
+  box-shadow: 0 4px 12px rgba(255, 87, 34, 0.25);
+  flex-shrink: 0;
+}
+
+.avatar-large {
+  width: 104px;
+  height: 104px;
+  border-radius: 50%;
+  object-fit: cover;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 2.4rem;
+  background: linear-gradient(135deg, var(--primary), #d84315);
+  color: #ffffff;
+  border: 3px solid var(--primary);
+  box-shadow: 0 4px 20px var(--primary-glow);
+  flex-shrink: 0;
+}
+
+[data-theme="light"] .pfp-hover-overlay {
+  background: rgba(0, 0, 0, 0.6);
+}
+

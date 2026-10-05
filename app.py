@@ -37,6 +37,29 @@ GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v3/userinfo"
 
+# Profile Picture (PFP) Upload Configuration
+UPLOAD_AVATAR_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static', 'uploads', 'avatars')
+os.makedirs(UPLOAD_AVATAR_DIR, exist_ok=True)
+ALLOWED_AVATAR_EXTENSIONS = {'jpg', 'jpeg', 'png', 'webp'}
+MAX_AVATAR_FILE_SIZE = 5 * 1024 * 1024  # 5 MB
+
+def get_user_initials(name):
+    """Generates 1 or 2 uppercase initials from a user's full name."""
+    if not name:
+        return 'A'
+    parts = name.strip().split()
+    if len(parts) >= 2:
+        return f"{parts[0][0]}{parts[-1][0]}".upper()
+    elif len(parts) == 1 and len(parts[0]) > 0:
+        return parts[0][:2].upper() if len(parts[0]) > 1 else parts[0][0].upper()
+    return 'A'
+
+@app.template_filter('initials')
+def initials_filter(name):
+    """Jinja filter to render athlete initials."""
+    return get_user_initials(name)
+
+
 def is_google_oauth_configured():
     """Checks whether valid, non-placeholder Google OAuth credentials are present in the environment."""
     client_id = os.environ.get('GOOGLE_CLIENT_ID', '').strip()
@@ -222,27 +245,45 @@ def login():
         return redirect(url_for('dashboard'))
 
     if request.method == 'POST':
-        username = request.form.get('username', '').strip()
-        password = request.form.get('password', '').strip()
+        raw_identifier = request.form.get('username', '')
+        # Do not modify passwords before verification (preserve spaces, do not strip)
+        password = request.form.get('password', '')
 
-        if not username or not password:
-            flash("Please enter both username/email and password.", "danger")
+        identifier = raw_identifier.strip()
+        if not identifier or not password:
+            flash("Please enter your username/email and password", "danger")
             return render_template('login.html')
+
+        clean_identifier = identifier.lower()
+
+        logger.info(f"Login attempt initiated for: {clean_identifier}")
 
         conn = database.get_db()
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM users WHERE username = ? OR email = ?", (username, username.lower()))
+        cursor.execute(
+            "SELECT * FROM users WHERE LOWER(username) = ? OR LOWER(email) = ?",
+            (clean_identifier, clean_identifier)
+        )
         user = cursor.fetchone()
         conn.close()
 
-        if user and check_password_hash(user['password_hash'], password):
-            session.clear()
-            session.permanent = True
-            session['user_id'] = user['id']
-            flash(f"Welcome back, {user['full_name']}! Ready to crush today's session?", "success")
-            return redirect(url_for('dashboard'))
-        else:
-            flash("Invalid credentials. Try again or click Demo Login.", "danger")
+        if not user:
+            logger.info(f"Login failed: Account not found for '{clean_identifier}'")
+            flash("Account not found", "danger")
+            return render_template('login.html')
+
+        if not check_password_hash(user['password_hash'], password):
+            logger.info(f"Login failed: Invalid password for user_id={user['id']}")
+            flash("Invalid username/email or password", "danger")
+            return render_template('login.html')
+
+        # Authentication successful
+        session.clear()
+        session.permanent = True
+        session['user_id'] = user['id']
+        logger.info(f"Login successful: user_id={user['id']} (session established)")
+        flash(f"Welcome back, {user['full_name']}! Ready to crush today's session?", "success")
+        return redirect(url_for('dashboard'))
 
     return render_template('login.html')
 
@@ -430,7 +471,7 @@ def auth_google_callback():
         logger.info(f"User found/created: user_id={user_id}")
     else:
         # Priority B: Check if existing user with matching email
-        cursor.execute("SELECT * FROM users WHERE email = ?", (email,))
+        cursor.execute("SELECT * FROM users WHERE LOWER(email) = ?", (email.lower(),))
         user = cursor.fetchone()
 
         if user:
@@ -538,7 +579,7 @@ def register():
 
         conn = database.get_db()
         cursor = conn.cursor()
-        cursor.execute("SELECT id FROM users WHERE username = ? OR email = ?", (username, email))
+        cursor.execute("SELECT id FROM users WHERE LOWER(username) = ? OR LOWER(email) = ?", (username, email))
         existing_user = cursor.fetchone()
 
         if existing_user:
@@ -567,8 +608,8 @@ def register():
                 height_cm, weight_kg, experience_level, fitness_goal,
                 training_days_per_week, available_equipment, dietary_preference,
                 target_weight_kg, daily_calorie_target, daily_protein_target,
-                daily_carbs_target, daily_fats_target
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                daily_carbs_target, daily_fats_target, auth_provider
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'local')
         """, (
             full_name, username, email, password_hash, age, gender,
             height_cm, weight_kg, experience_level, fitness_goal,
@@ -579,6 +620,8 @@ def register():
         new_user_id = cursor.lastrowid
         conn.commit()
         conn.close()
+
+        logger.info(f"New local user registered: user_id={new_user_id}, username={username}")
 
         session.clear()
         session.permanent = True
@@ -2211,6 +2254,179 @@ def profile():
 
     metrics = calculate_fitness_metrics(g.user)
     return render_template('profile.html', metrics=metrics)
+
+@app.route('/profile/picture/upload', methods=['POST'])
+@login_required
+def upload_profile_picture():
+    """Uploads, validates, crops, and updates the user's custom profile picture."""
+    file = None
+    for key in ['profile_picture', 'file', 'image', 'avatar']:
+        if key in request.files and request.files[key].filename:
+            file = request.files[key]
+            break
+
+    if not file or not file.filename:
+        err = "Please select a valid image"
+        if request.is_json or request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify({'success': False, 'message': err}), 400
+        flash(err, "danger")
+        return redirect(url_for('profile'))
+
+    original_filename = file.filename
+    ext = os.path.splitext(original_filename)[1].lower().lstrip('.')
+    if ext not in ALLOWED_AVATAR_EXTENSIONS:
+        err = "Please select a valid image"
+        if request.is_json or request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify({'success': False, 'message': err}), 400
+        flash(err, "danger")
+        return redirect(url_for('profile'))
+
+    # Check file size (max 5 MB)
+    file.seek(0, os.SEEK_END)
+    file_size = file.tell()
+    file.seek(0)
+
+    if file_size > MAX_AVATAR_FILE_SIZE:
+        err = "Image must be smaller than 5 MB"
+        if request.is_json or request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify({'success': False, 'message': err}), 400
+        flash(err, "danger")
+        return redirect(url_for('profile'))
+
+    if file_size == 0:
+        err = "Please select a valid image"
+        if request.is_json or request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify({'success': False, 'message': err}), 400
+        flash(err, "danger")
+        return redirect(url_for('profile'))
+
+    # Validate image content with Pillow
+    try:
+        from PIL import Image
+        img = Image.open(file)
+        img.verify()
+        file.seek(0)
+        img = Image.open(file)
+        img_format = (img.format or '').upper()
+        if img_format not in {'JPEG', 'JPG', 'PNG', 'WEBP'}:
+            raise ValueError(f"Invalid format {img_format}")
+    except Exception as e:
+        logger.warning(f"Corrupted or invalid image upload attempted: {e}")
+        err = "Please select a valid image"
+        if request.is_json or request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify({'success': False, 'message': err}), 400
+        flash(err, "danger")
+        return redirect(url_for('profile'))
+
+    user_id = g.user['id']
+
+    # Process and crop square
+    try:
+        width, height = img.size
+        min_dim = min(width, height)
+        left = (width - min_dim) // 2
+        top = (height - min_dim) // 2
+        right = left + min_dim
+        bottom = top + min_dim
+        cropped = img.crop((left, top, right, bottom))
+        if min_dim > 512:
+            cropped = cropped.resize((512, 512), Image.Resampling.LANCZOS)
+
+        # Decide output format & extension
+        if cropped.mode in ('RGBA', 'LA') or (cropped.mode == 'P' and 'transparency' in cropped.info):
+            save_format = 'WEBP'
+            save_ext = '.webp'
+        else:
+            cropped = cropped.convert('RGB')
+            save_format = 'JPEG'
+            save_ext = '.jpg'
+
+        # Generate secure unique filename
+        unique_token = secrets.token_hex(8)
+        new_filename = f"avatar_u{user_id}_{int(datetime.now().timestamp())}_{unique_token}{save_ext}"
+        destination_path = os.path.join(UPLOAD_AVATAR_DIR, new_filename)
+        cropped.save(destination_path, format=save_format, quality=90, optimize=True)
+
+        web_path = f"/static/uploads/avatars/{new_filename}"
+
+        # Clean up old uploaded image file if present in static/uploads/avatars/
+        conn = database.get_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT profile_picture FROM users WHERE id = ?", (user_id,))
+        current_row = cursor.fetchone()
+        if current_row and current_row['profile_picture']:
+            old_pic = current_row['profile_picture']
+            if old_pic.startswith('/static/uploads/avatars/'):
+                old_file = os.path.join(UPLOAD_AVATAR_DIR, os.path.basename(old_pic))
+                if os.path.exists(old_file) and os.path.isfile(old_file) and old_file != destination_path:
+                    try:
+                        os.remove(old_file)
+                    except Exception as ex:
+                        logger.warning(f"Could not remove old avatar {old_file}: {ex}")
+
+        # Update database
+        cursor.execute("UPDATE users SET profile_picture = ? WHERE id = ?", (web_path, user_id))
+        conn.commit()
+        conn.close()
+
+        logger.info(f"Profile picture updated successfully for user_id={user_id}: {web_path}")
+        msg = "Profile picture updated successfully"
+        initials = get_user_initials(g.user['full_name'] if g.user else '')
+        if request.is_json or request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify({'success': True, 'message': msg, 'avatar_url': web_path, 'initials': initials})
+        flash(msg, "success")
+        return redirect(url_for('profile'))
+
+    except Exception as e:
+        logger.error(f"Error processing profile picture upload: {e}")
+        err = "An error occurred while uploading your profile picture. Please try again."
+        if request.is_json or request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify({'success': False, 'message': err}), 500
+        flash(err, "danger")
+        return redirect(url_for('profile'))
+
+@app.route('/profile/picture/remove', methods=['POST'])
+@login_required
+def remove_profile_picture():
+    """Removes the custom profile picture and restores the default avatar."""
+    user_id = g.user['id']
+    try:
+        conn = database.get_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT profile_picture, full_name FROM users WHERE id = ?", (user_id,))
+        user_row = cursor.fetchone()
+
+        if user_row and user_row['profile_picture']:
+            old_pic = user_row['profile_picture']
+            if old_pic.startswith('/static/uploads/avatars/'):
+                old_file = os.path.join(UPLOAD_AVATAR_DIR, os.path.basename(old_pic))
+                if os.path.exists(old_file) and os.path.isfile(old_file):
+                    try:
+                        os.remove(old_file)
+                    except Exception as ex:
+                        logger.warning(f"Could not delete avatar file {old_file}: {ex}")
+
+            cursor.execute("UPDATE users SET profile_picture = NULL WHERE id = ?", (user_id,))
+            conn.commit()
+
+        initials = get_user_initials(user_row['full_name'] if user_row else g.user['full_name'])
+        conn.close()
+
+        logger.info(f"Profile picture removed for user_id={user_id}")
+        msg = "Profile picture removed"
+        if request.is_json or request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify({'success': True, 'message': msg, 'initials': initials})
+        flash(msg, "info")
+        return redirect(url_for('profile'))
+
+    except Exception as e:
+        logger.error(f"Error removing profile picture: {e}")
+        err = "Could not remove profile picture. Please try again."
+        if request.is_json or request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify({'success': False, 'message': err}), 500
+        flash(err, "danger")
+        return redirect(url_for('profile'))
+
 
 @app.route('/profile/apply-recommendations', methods=['POST'])
 @login_required

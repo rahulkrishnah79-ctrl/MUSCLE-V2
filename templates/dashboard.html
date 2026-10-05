@@ -4,13 +4,28 @@
 
 {% block content %}
 <div class="dashboard-header" style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 2rem; flex-wrap: wrap; gap: 1rem;">
-  <div>
-    <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.25rem;">
-      <span class="badge badge-primary">{{ g.user['fitness_goal'] }}</span>
-      <span class="badge badge-neutral">{{ today }}</span>
+  <div style="display: flex; align-items: center; gap: 1rem;">
+    <a href="{{ url_for('profile') }}" title="View Athlete Profile" style="text-decoration: none; flex-shrink: 0;">
+      {% if g.user['profile_picture'] %}
+        <img src="{{ g.user['profile_picture'] }}" alt="{{ g.user['full_name'] }}" class="avatar-medium pfp-sync-avatar" referrerpolicy="no-referrer">
+        <div class="avatar-medium pfp-sync-initials" style="display: none;">
+          {{ g.user['full_name']|initials }}
+        </div>
+      {% else %}
+        <img src="" alt="{{ g.user['full_name'] }}" class="avatar-medium pfp-sync-avatar" style="display: none;" referrerpolicy="no-referrer">
+        <div class="avatar-medium pfp-sync-initials">
+          {{ g.user['full_name']|initials }}
+        </div>
+      {% endif %}
+    </a>
+    <div>
+      <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.25rem;">
+        <span class="badge badge-primary">{{ g.user['fitness_goal'] }}</span>
+        <span class="badge badge-neutral">{{ today }}</span>
+      </div>
+      <h1 class="title-display">Welcome, {{ g.user['full_name'] }}</h1>
+      <p class="text-muted text-sm">Stay consistent. Every rep and every gram of protein builds the foundation.</p>
     </div>
-    <h1 class="title-display">Welcome, {{ g.user['full_name'] }}</h1>
-    <p class="text-muted text-sm">Stay consistent. Every rep and every gram of protein builds the foundation.</p>
   </div>
   <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
     <a href="{{ url_for('workouts') }}" class="btn btn-primary">
