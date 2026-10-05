@@ -1,0 +1,426 @@
+{% extends "base.html" %}
+
+{% block title %}Athlete Fitness Profile - IronPulse Tracker{% endblock %}
+
+{% block content %}
+<div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 2rem; flex-wrap: wrap; gap: 1rem;">
+  <div style="display: flex; align-items: center; gap: 1.25rem;">
+    {% if g.user['profile_picture'] %}
+      <img src="{{ g.user['profile_picture'] }}" alt="{{ g.user['full_name'] }}" style="width: 72px; height: 72px; border-radius: 50%; border: 2px solid var(--primary); object-fit: cover; box-shadow: 0 4px 14px rgba(255, 87, 34, 0.3);" referrerpolicy="no-referrer">
+    {% endif %}
+    <div>
+      <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.25rem; flex-wrap: wrap;">
+        <span class="badge badge-primary">Athlete Biometrics</span>
+        <span class="badge badge-neutral">Database ID: #{{ g.user['id'] }}</span>
+        {% if g.user['auth_provider'] == 'google' %}
+          <span class="badge badge-cyan" style="display: inline-flex; align-items: center; gap: 0.35rem;">
+            <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor"><path d="M12.545,10.239v3.821h5.445c-0.712,2.315-2.647,3.972-5.445,3.972c-3.332,0-6.033-2.701-6.033-6.032s2.701-6.032,6.033-6.032c1.498,0,2.866,0.549,3.921,1.453l2.814-2.814C17.503,2.988,15.139,2,12.545,2C7.021,2,2.543,6.477,2.543,12s4.478,10,10.002,10c8.396,0,10.249-7.85,9.426-11.748L12.545,10.239z"/></svg>
+            Google Connected
+          </span>
+        {% endif %}
+      </div>
+      <h1 class="title-display">{{ g.user['full_name'] }}</h1>
+      <p class="text-muted text-sm">Personal biometrics, scientific caloric calculations, and personalized hypertrophy targets.</p>
+    </div>
+  </div>
+  <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+    <!-- Reset Fitness Preferences Button -->
+    <button type="button" class="btn btn-outline" onclick="openResetFitnessPreferencesModal()" id="btnResetPreferencesTop" style="border-color: rgba(239, 68, 68, 0.4); color: #ef4444;" title="Reset fitness preferences to defaults">
+      <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" style="vertical-align: middle; margin-right: 4px;"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path></svg>
+      Reset Fitness Preferences
+    </button>
+    <!-- Apply Recommendations Button Form -->
+    <form action="{{ url_for('apply_profile_recommendations') }}" method="POST" style="display: inline;">
+      <button type="submit" class="btn btn-outline" title="Auto-populate your targets with scientific formulas">
+        <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"></polyline></svg>
+        Apply Scientific Recommendations
+      </button>
+    </form>
+  </div>
+</div>
+
+<!-- 3 Calculation Result Cards Prominently Highlighted -->
+<div class="grid-3" style="margin-bottom: 2rem;">
+  
+  <!-- 1. BMI Calculation -->
+  <div class="stat-card" style="border-top: 3px solid var(--accent-green);">
+    <div class="stat-info">
+      <div style="display: flex; align-items: center; gap: 0.45rem; margin-bottom: 0.2rem;">
+        <span class="stat-label">Body Mass Index (BMI)</span>
+        <span class="badge {{ metrics['bmi_badge_class'] }}">{{ metrics['bmi_status'] }}</span>
+      </div>
+      <div class="stat-value" style="color: #ffffff;">
+        {{ metrics['bmi'] }} <span class="text-xs font-semibold text-muted">kg/m²</span>
+      </div>
+      <div class="stat-sub text-dim">
+        Formula: {{ g.user['weight_kg'] }}kg / ({{ (g.user['height_cm']/100)|round(2) }}m)²
+      </div>
+    </div>
+    <div class="stat-icon green">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+    </div>
+  </div>
+
+  <!-- 2. Estimated Daily Calorie Requirement -->
+  <div class="stat-card" style="border-top: 3px solid var(--primary);">
+    <div class="stat-info">
+      <div style="display: flex; align-items: center; gap: 0.45rem; margin-bottom: 0.2rem;">
+        <span class="stat-label">Daily Calorie Requirement</span>
+        <span class="badge badge-primary">{{ g.user['fitness_goal'] }}</span>
+      </div>
+      <div class="stat-value text-gradient">
+        {{ "{:,.0f}".format(metrics['calorie_req']) }} <span class="text-xs font-semibold text-muted">kcal/day</span>
+      </div>
+      <div class="stat-sub text-dim">
+        BMR: {{ metrics['bmr'] }} kcal • TDEE: {{ metrics['tdee'] }} kcal
+      </div>
+    </div>
+    <div class="stat-icon primary">
+      <svg viewBox="0 0 24 24"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
+    </div>
+  </div>
+
+  <!-- 3. Recommended Protein Intake -->
+  <div class="stat-card" style="border-top: 3px solid var(--accent-cyan);">
+    <div class="stat-info">
+      <div style="display: flex; align-items: center; gap: 0.45rem; margin-bottom: 0.2rem;">
+        <span class="stat-label">Recommended Protein</span>
+        <span class="badge badge-cyan">{{ metrics['protein_multiplier'] }}g / kg Bodyweight</span>
+      </div>
+      <div class="stat-value" style="color: #38bdf8;">
+        {{ metrics['recommended_protein'] }} <span class="text-xs font-semibold text-muted">g/day</span>
+      </div>
+      <div class="stat-sub text-dim">
+        Muscle synthesis &amp; nitrogen balance
+      </div>
+    </div>
+    <div class="stat-icon cyan">
+      <svg viewBox="0 0 24 24"><path d="M18 8h1a4 4 0 0 1 0 8h-1"></path><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"></path></svg>
+    </div>
+  </div>
+
+</div>
+
+<!-- Main Form & Details Grid -->
+<div class="grid-sidebar">
+  
+  <!-- Left Column: Complete Profile Form -->
+  <div class="card">
+    <div class="card-header">
+      <h2 class="card-title">
+        <svg viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+        Edit Fitness Profile &amp; Biometrics
+      </h2>
+      <span class="badge badge-neutral">Auto-Calculates Metrics</span>
+    </div>
+
+    <form action="{{ url_for('profile') }}" method="POST">
+      
+      <!-- Basic Details -->
+      <div class="grid-2">
+        <div class="form-group">
+          <label for="full_name" class="form-label">Athlete Full Name *</label>
+          <input type="text" id="full_name" name="full_name" class="form-control" value="{{ g.user['full_name'] }}" required>
+        </div>
+
+        <div class="form-group">
+          <label for="email_display" class="form-label">Email Address (Account ID)</label>
+          <input type="email" id="email_display" class="form-control" value="{{ g.user['email'] }}" disabled style="opacity: 0.6; cursor: not-allowed;">
+        </div>
+      </div>
+
+      <!-- 1. Age, Gender, Height, Weight, Target Weight -->
+      <div class="grid-3">
+        <div class="form-group">
+          <label for="age" class="form-label">Age (Years) *</label>
+          <input type="number" id="age" name="age" class="form-control" value="{{ g.user['age'] or 25 }}" min="12" max="100" required>
+        </div>
+
+        <div class="form-group">
+          <label for="gender" class="form-label">Gender (BMR Formula) *</label>
+          <select id="gender" name="gender" class="form-control" required>
+            <option value="Male" {% if g.user['gender'] == 'Male' %}selected{% endif %}>Male (Mifflin +5)</option>
+            <option value="Female" {% if g.user['gender'] == 'Female' %}selected{% endif %}>Female (Mifflin -161)</option>
+            <option value="Other" {% if g.user['gender'] == 'Other' %}selected{% endif %}>Other / Non-Binary</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label for="height_cm" class="form-label">Height (cm) *</label>
+          <input type="number" step="0.5" id="height_cm" name="height_cm" class="form-control" value="{{ g.user['height_cm'] or 178 }}" min="100" max="250" required>
+        </div>
+      </div>
+
+      <div class="grid-2">
+        <div class="form-group">
+          <label for="weight_kg" class="form-label">Current Weight (kg) *</label>
+          <input type="number" step="0.1" id="weight_kg" name="weight_kg" class="form-control" value="{{ g.user['weight_kg'] or 75.0 }}" min="30" max="300" required>
+        </div>
+
+        <div class="form-group">
+          <label for="target_weight_kg" class="form-label">Target Goal Weight (kg)</label>
+          <input type="number" step="0.1" id="target_weight_kg" name="target_weight_kg" class="form-control" value="{{ g.user['target_weight_kg'] or 80.0 }}" min="30" max="300">
+        </div>
+      </div>
+
+      <div style="margin: 1.25rem 0 1rem; border-top: 1px solid var(--border-color); padding-top: 1.25rem;">
+        <h3 class="text-sm font-bold text-muted" style="text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.85rem;">
+          Training Parameters &amp; Dietary Preferences
+        </h3>
+      </div>
+
+      <!-- 2. Training Experience, Fitness Goal, Training Days Per Week -->
+      <div class="grid-2">
+        <div class="form-group">
+          <label for="experience_level" class="form-label">Training Experience Level *</label>
+          <select id="experience_level" name="experience_level" class="form-control" required>
+            <option value="Beginner (< 1 Year)" {% if 'Beginner' in g.user['experience_level'] %}selected{% endif %}>Beginner (&lt; 1 Year)</option>
+            <option value="Intermediate (1-3 Years)" {% if 'Intermediate' in g.user['experience_level'] %}selected{% endif %}>Intermediate (1-3 Years)</option>
+            <option value="Advanced (3+ Years)" {% if 'Advanced' in g.user['experience_level'] %}selected{% endif %}>Advanced (3+ Years)</option>
+            <option value="Elite (5+ Years)" {% if 'Elite' in g.user['experience_level'] %}selected{% endif %}>Elite Competitor (5+ Years)</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label for="fitness_goal" class="form-label">Primary Fitness Goal *</label>
+          <select id="fitness_goal" name="fitness_goal" class="form-control" required>
+            <option value="Muscle Hypertrophy & Strength" {% if 'Hypertrophy' in g.user['fitness_goal'] %}selected{% endif %}>Muscle Hypertrophy &amp; Strength (+350 kcal)</option>
+            <option value="Lean Bulk" {% if 'Bulk' in g.user['fitness_goal'] %}selected{% endif %}>Lean Bulk (+350 kcal)</option>
+            <option value="Cutting & Fat Loss" {% if 'Cut' in g.user['fitness_goal'] or 'Loss' in g.user['fitness_goal'] %}selected{% endif %}>Cutting &amp; Fat Loss (-450 kcal)</option>
+            <option value="Maintenance / Body Recomposition" {% if 'Recomposition' in g.user['fitness_goal'] or 'Maintenance' in g.user['fitness_goal'] %}selected{% endif %}>Maintenance &amp; Recomposition (0 kcal)</option>
+            <option value="Strength & Power" {% if 'Power' in g.user['fitness_goal'] %}selected{% endif %}>Strength &amp; Power (+250 kcal)</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- 3. Training Days Per Week, Equipment, Dietary Preference -->
+      <div class="grid-3">
+        <div class="form-group">
+          <label for="training_days_per_week" class="form-label">Training Days / Week *</label>
+          <select id="training_days_per_week" name="training_days_per_week" class="form-control" required>
+            <option value="2" {% if g.user['training_days_per_week'] == 2 %}selected{% endif %}>2 Days / Week (Light)</option>
+            <option value="3" {% if g.user['training_days_per_week'] == 3 %}selected{% endif %}>3 Days / Week (Moderate)</option>
+            <option value="4" {% if g.user['training_days_per_week'] == 4 %}selected{% endif %}>4 Days / Week (Recommended)</option>
+            <option value="5" {% if g.user['training_days_per_week'] == 5 %}selected{% endif %}>5 Days / Week (Intense Split)</option>
+            <option value="6" {% if g.user['training_days_per_week'] == 6 %}selected{% endif %}>6 Days / Week (Push/Pull/Legs)</option>
+            <option value="7" {% if g.user['training_days_per_week'] == 7 %}selected{% endif %}>7 Days / Week (Daily Athletic)</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label for="available_equipment" class="form-label">Available Equipment *</label>
+          <select id="available_equipment" name="available_equipment" class="form-control" required>
+            <option value="Full Commercial Gym" {% if g.user['available_equipment'] == 'Full Commercial Gym' %}selected{% endif %}>Full Commercial Gym</option>
+            <option value="Home Gym (Barbell & Rack)" {% if 'Barbell' in g.user['available_equipment'] %}selected{% endif %}>Home Gym (Barbell &amp; Rack)</option>
+            <option value="Dumbbells & Bench" {% if 'Dumbbell' in g.user['available_equipment'] %}selected{% endif %}>Dumbbells &amp; Adjustable Bench</option>
+            <option value="Cables & Machines" {% if 'Cables' in g.user['available_equipment'] %}selected{% endif %}>Cables &amp; Machines</option>
+            <option value="Bodyweight / Calisthenics" {% if 'Bodyweight' in g.user['available_equipment'] %}selected{% endif %}>Bodyweight / Calisthenics</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label for="dietary_preference" class="form-label">Dietary Preference *</label>
+          <select id="dietary_preference" name="dietary_preference" class="form-control" required>
+            <option value="High Protein Omnivore" {% if 'Omnivore' in g.user['dietary_preference'] %}selected{% endif %}>High Protein Omnivore</option>
+            <option value="Vegetarian" {% if g.user['dietary_preference'] == 'Vegetarian' %}selected{% endif %}>Vegetarian (Eggs/Dairy)</option>
+            <option value="Vegan (Plant-Based)" {% if 'Vegan' in g.user['dietary_preference'] %}selected{% endif %}>Vegan (100% Plant-Based)</option>
+            <option value="Pescatarian" {% if g.user['dietary_preference'] == 'Pescatarian' %}selected{% endif %}>Pescatarian (Fish &amp; Plants)</option>
+            <option value="Keto / Low-Carb" {% if 'Keto' in g.user['dietary_preference'] %}selected{% endif %}>Keto / Low-Carb High-Fat</option>
+          </select>
+        </div>
+      </div>
+
+      <div style="margin: 1.25rem 0 1rem; border-top: 1px solid var(--border-color); padding-top: 1.25rem;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.85rem;">
+          <h3 class="text-sm font-bold text-muted" style="text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0;">
+            Active Daily Nutritional Targets
+          </h3>
+          <span class="text-xs text-dim">Sync with recommendations or set custom values</span>
+        </div>
+      </div>
+
+      <!-- 4. Daily Nutrition Targets Inputs -->
+      <div class="grid-4" style="background: var(--bg-card-alt); padding: 1.25rem; border-radius: var(--radius-sm); border: 1px solid var(--border-color); margin-bottom: 1.5rem;">
+        <div class="form-group" style="margin-bottom: 0;">
+          <label for="daily_calorie_target" class="form-label text-xs">Calories (kcal)</label>
+          <input type="number" id="daily_calorie_target" name="daily_calorie_target" class="form-control" value="{{ g.user['daily_calorie_target'] or metrics['calorie_req'] }}" required>
+        </div>
+        <div class="form-group" style="margin-bottom: 0;">
+          <label for="daily_protein_target" class="form-label text-xs" style="color: #34d399;">Protein (g)</label>
+          <input type="number" id="daily_protein_target" name="daily_protein_target" class="form-control" value="{{ g.user['daily_protein_target'] or metrics['recommended_protein'] }}" required>
+        </div>
+        <div class="form-group" style="margin-bottom: 0;">
+          <label for="daily_carbs_target" class="form-label text-xs" style="color: #38bdf8;">Carbs (g)</label>
+          <input type="number" id="daily_carbs_target" name="daily_carbs_target" class="form-control" value="{{ g.user['daily_carbs_target'] or metrics['rec_carbs'] }}" required>
+        </div>
+        <div class="form-group" style="margin-bottom: 0;">
+          <label for="daily_fats_target" class="form-label text-xs" style="color: #fbbf24;">Fats (g)</label>
+          <input type="number" id="daily_fats_target" name="daily_fats_target" class="form-control" value="{{ g.user['daily_fats_target'] or metrics['rec_fats'] }}" required>
+        </div>
+      </div>
+
+      <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
+        <button type="submit" class="btn btn-primary btn-lg" style="flex: 1; min-width: 220px;" data-loading-text="Saving Biometrics...">Save Profile &amp; Recalculate Metrics</button>
+        <button type="button" class="btn btn-outline btn-lg" onclick="openResetFitnessPreferencesModal()" style="border-color: rgba(239, 68, 68, 0.4); color: #ef4444;" title="Reset preferences to default values">
+          Reset Fitness Preferences
+        </button>
+      </div>
+
+    </form>
+  </div>
+
+  <!-- Right Column: Athlete Summary & Scientific Formulas Card -->
+  <div style="display: flex; flex-direction: column; gap: 1.5rem;">
+    
+    <!-- Profile ID Badge Card -->
+    <div class="card" style="text-align: center; padding: 2rem 1.5rem;">
+      <div style="width: 80px; height: 80px; margin: 0 auto 1.25rem; border-radius: 50%; background: linear-gradient(135deg, var(--primary), #d84315); color: #ffffff; display: flex; align-items: center; justify-content: center; font-size: 2.2rem; font-weight: 800; box-shadow: 0 4px 20px var(--primary-glow);">
+        {{ g.user['full_name'][0]|upper if g.user['full_name'] else 'A' }}
+      </div>
+
+      <h2 class="text-xl font-bold" style="color: var(--text-heading);">{{ g.user['full_name'] }}</h2>
+      <p class="text-xs text-muted" style="margin: 0.25rem 0 0.85rem;">@{{ g.user['username'] }} • {{ g.user['email'] }}</p>
+
+      <div style="display: flex; gap: 0.4rem; justify-content: center; flex-wrap: wrap; margin-bottom: 1.25rem;">
+        <span class="badge badge-primary">{{ g.user['fitness_goal'] }}</span>
+        <span class="badge badge-neutral">{{ g.user['experience_level'] }}</span>
+      </div>
+
+      <div style="border-top: 1px solid var(--border-color); padding-top: 1.25rem; display: flex; flex-direction: column; gap: 0.75rem; text-align: left; font-size: 0.85rem;">
+        
+        <div style="display: flex; justify-content: space-between;">
+          <span class="text-muted">Age / Gender:</span>
+          <span class="font-bold text-main">{{ g.user['age'] }} yrs • {{ g.user['gender'] }}</span>
+        </div>
+
+        <div style="display: flex; justify-content: space-between;">
+          <span class="text-muted">Training Frequency:</span>
+          <span class="font-bold text-main">{{ g.user['training_days_per_week'] }} Days / Week</span>
+        </div>
+
+        <div style="display: flex; justify-content: space-between;">
+          <span class="text-muted">Dietary Preference:</span>
+          <span class="font-bold text-green">{{ g.user['dietary_preference'] }}</span>
+        </div>
+
+        <div style="display: flex; justify-content: space-between;">
+          <span class="text-muted">Equipment Access:</span>
+          <span class="font-semibold text-main">{{ g.user['available_equipment'] }}</span>
+        </div>
+
+        <div style="display: flex; justify-content: space-between; border-top: 1px dashed var(--border-color); padding-top: 0.65rem;">
+          <span class="text-muted">Isolated User ID:</span>
+          <span class="text-dim font-bold">SQL Record #{{ g.user['id'] }}</span>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Scientific Formula Explanation Card -->
+    <div class="card" style="background: var(--bg-card-alt);">
+      <h3 class="text-sm font-bold" style="color: var(--text-heading); margin-bottom: 0.75rem; display: flex; align-items: center; gap: 0.4rem;">
+        <svg viewBox="0 0 24 24" width="16" height="16" stroke="var(--primary)" stroke-width="2" fill="none"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+        Calculation Methodology
+      </h3>
+      <div style="font-size: 0.8rem; color: var(--text-muted); display: flex; flex-direction: column; gap: 0.65rem; line-height: 1.45;">
+        <p>
+          <strong class="text-main">Mifflin-St Jeor BMR:</strong> Calculates your resting metabolic burn from bodyweight, height, and age.
+        </p>
+        <p>
+          <strong class="text-main">Activity Multiplier:</strong> Scaled dynamically from {{ g.user['training_days_per_week'] }} training days/week (Factor: {{ metrics['activity_multiplier'] }}x).
+        </p>
+        <p>
+          <strong class="text-main">Protein Hypertrophy Target:</strong> Evaluated at {{ metrics['protein_multiplier'] }}g per kg bodyweight for lean tissue preservation and muscular hypertrophy.
+        </p>
+      </div>
+    </div>
+
+    <!-- Security & Session Control -->
+    <div class="card" style="background: var(--bg-card-alt);">
+      <h3 class="text-sm font-bold" style="margin-bottom: 0.5rem; color: var(--text-heading);">🔒 Session &amp; Security</h3>
+      <p class="text-xs text-muted" style="margin-bottom: 1rem;">
+        Session encrypted via Flask cookie with salted hash authentication.
+      </p>
+      <a href="{{ url_for('logout') }}" class="btn btn-danger btn-sm btn-block">Sign Out of IronPulse</a>
+    </div>
+
+  </div>
+
+</div>
+
+<!-- Modal: Reset Fitness Preferences Confirmation -->
+<div class="modal-backdrop" id="resetFitnessPreferencesModal">
+  <div class="modal-dialog" style="max-width: 480px;">
+    <div class="modal-header">
+      <div style="display: flex; align-items: center; gap: 0.6rem;">
+        <div style="width: 36px; height: 36px; border-radius: 8px; background: rgba(239, 68, 68, 0.15); color: #ef4444; display: flex; align-items: center; justify-content: center;">
+          <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path></svg>
+        </div>
+        <div>
+          <h3 class="text-base font-bold" style="color: var(--text-heading); margin: 0;">Reset fitness preferences?</h3>
+          <p class="text-xs text-muted" style="margin: 0;">Confirmation Required</p>
+        </div>
+      </div>
+      <button type="button" class="alert-close" onclick="closeResetFitnessPreferencesModal()" aria-label="Close modal">&times;</button>
+    </div>
+
+    <div class="modal-body">
+      <p style="font-size: 0.95rem; color: var(--text-main); margin-bottom: 0.75rem; font-weight: 600;">
+        This will reset your workout and nutrition preferences back to default values.
+      </p>
+      <div style="background: rgba(255, 255, 255, 0.04); border-left: 3px solid #ef4444; padding: 0.75rem 0.9rem; border-radius: 4px; font-size: 0.8rem; color: var(--text-muted); line-height: 1.45;">
+        ℹ️ <strong>Safety Guarantee:</strong> Your account, login password, email, and biometric measurements (weight, height, age) will NOT be deleted. Only fitness goals, 4-day workout schedule, gym equipment, and diet preferences will be reset.
+      </div>
+    </div>
+
+    <div class="modal-footer" style="border-top: 1px solid var(--border-color); padding: 1rem 1.5rem; gap: 0.75rem;">
+      <button type="button" class="btn btn-secondary" onclick="closeResetFitnessPreferencesModal()">
+        Cancel
+      </button>
+      <form action="{{ url_for('reset_fitness_preferences') }}" method="POST" style="display: inline; margin: 0;">
+        <button type="submit" class="btn btn-danger" id="btnConfirmResetPreferences">
+          Reset Fitness Preferences
+        </button>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script>
+  function openResetFitnessPreferencesModal() {
+    const modal = document.getElementById('resetFitnessPreferencesModal');
+    if (modal) {
+      modal.classList.add('active');
+      modal.classList.add('open');
+      document.body.style.overflow = 'hidden';
+    }
+  }
+
+  function closeResetFitnessPreferencesModal() {
+    const modal = document.getElementById('resetFitnessPreferencesModal');
+    if (modal) {
+      modal.classList.remove('active');
+      modal.classList.remove('open');
+      document.body.style.overflow = '';
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', function() {
+    const prefModal = document.getElementById('resetFitnessPreferencesModal');
+    if (prefModal) {
+      prefModal.addEventListener('click', function(e) {
+        if (e.target === prefModal) closeResetFitnessPreferencesModal();
+      });
+    }
+  });
+
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+      const prefModal = document.getElementById('resetFitnessPreferencesModal');
+      if (prefModal && prefModal.classList.contains('active')) {
+        closeResetFitnessPreferencesModal();
+      }
+    }
+  });
+</script>
+{% endblock %}

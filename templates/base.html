@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}IronPulse - Muscle Building & Fitness Tracker{% endblock %}</title>
+  <script>
+    (function() {
+      try {
+        var savedTheme = localStorage.getItem('ironpulse_theme') || 'dark';
+        document.documentElement.setAttribute('data-theme', savedTheme);
+      } catch (e) {}
+    })();
+  </script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    body { font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif; }
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  {% block extra_head %}{% endblock %}
+</head>
+<body class="{% if g.user %}authenticated-app{% else %}public-site{% endif %}">
+
+  <!-- ==============================================================
+       PHASE 6: PAGE TRANSITION PROGRESS BAR & INITIAL APPLICATION LOADER
+       ============================================================== -->
+  <div id="pageTransitionBar" role="progressbar" aria-label="Loading Page Progress"></div>
+
+  <div id="appInitialLoader" aria-label="Loading IronPulse Application">
+    <div class="initial-loader-content">
+      <div class="loader-brand">
+        <div class="brand-icon" style="width: 36px; height: 36px;">
+          <svg viewBox="0 0 24 24"><path d="M6 5v14M18 5v14M2 9v6M22 9v6M6 12h12M4 7h4v10H4zM16 7h4v10h-4z"/></svg>
+        </div>
+        <span class="loader-brand-text">Iron<span class="text-gradient">Pulse</span></span>
+      </div>
+
+      <div class="loader-fitness-anim">
+        <svg class="loader-barbell-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M6 5v14M18 5v14M2 9v6M22 9v6M6 12h12M4 7h4v10H4zM16 7h4v10h-4z"/>
+        </svg>
+      </div>
+
+      <div class="loader-progress-track">
+        <div class="loader-progress-bar"></div>
+      </div>
+
+      <p class="loader-tagline">Building a stronger you.</p>
+    </div>
+  </div>
+  <script>
+    // Prompt loader dismissal: Never keep the loading screen visible unnecessarily
+    (function() {
+      function dismissInitialLoader() {
+        var loader = document.getElementById('appInitialLoader');
+        if (loader && !loader.classList.contains('loader-hidden')) {
+          loader.classList.add('loader-hidden');
+          setTimeout(function() {
+            if (loader.parentNode) loader.style.display = 'none';
+          }, 280);
+        }
+      }
+      if (document.readyState === 'complete') {
+        dismissInitialLoader();
+      } else {
+        window.addEventListener('load', dismissInitialLoader);
+        document.addEventListener('DOMContentLoaded', function() {
+          setTimeout(dismissInitialLoader, 250);
+        });
+        setTimeout(dismissInitialLoader, 650); // Fallback limit
+      }
+    })();
+  </script>
+
+  {% if g.user %}
+  <!-- ==============================================================
+       AUTHENTICATED APPLICATION LAYOUT (Sidebar + Main Viewport)
+       ============================================================== -->
+  <div class="app-layout" id="appLayout">
+    
+    <!-- Collapsible SaaS Sidebar -->
+    <aside class="app-sidebar" id="appSidebar" aria-label="Main Navigation">
+      <div class="sidebar-header">
+        <a href="{{ url_for('dashboard') }}" class="sidebar-brand">
+          <div class="brand-icon">
+            <svg viewBox="0 0 24 24"><path d="M6 5v14M18 5v14M2 9v6M22 9v6M6 12h12M4 7h4v10H4zM16 7h4v10h-4z"/></svg>
+          </div>
+          <div class="brand-text">
+            <span>Iron<span class="text-gradient">Pulse</span></span>
+            <span class="brand-badge-sub">PRO SAAS</span>
+          </div>
+        </a>
+        <button class="sidebar-collapse-btn" id="sidebarCollapseBtn" title="Collapse Sidebar (Desktop)" aria-label="Toggle Desktop Sidebar">
+          <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none">
+            <polyline points="15 18 9 12 15 6"></polyline>
+          </svg>
+        </button>
+      </div>
+
+      <!-- Navigation Menu -->
+      <nav class="sidebar-nav">
+        <div class="nav-section-title">Core Management</div>
+        <ul class="sidebar-menu">
+          <li>
+            <a href="{{ url_for('dashboard') }}" class="sidebar-link {% if request.endpoint == 'dashboard' %}active{% endif %}" title="Dashboard">
+              <span class="sidebar-icon">
+                <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
+              </span>
+              <span class="sidebar-text">Dashboard</span>
+            </a>
+          </li>
+          <li>
+            <a href="{{ url_for('workouts') }}" class="sidebar-link {% if request.endpoint in ['workouts', 'active_workout'] %}active{% endif %}" title="Workouts">
+              <span class="sidebar-icon">
+                <svg viewBox="0 0 24 24"><path d="M6 4v16M18 4v16M2 8v8M22 8v8M6 12h12"/></svg>
+              </span>
+              <span class="sidebar-text">Workouts</span>
+            </a>
+          </li>
+          <li>
+            <a href="{{ url_for('nutrition') }}" class="sidebar-link {% if request.endpoint == 'nutrition' %}active{% endif %}" title="Nutrition">
+              <span class="sidebar-icon">
+                <svg viewBox="0 0 24 24"><path d="M18 8h1a4 4 0 0 1 0 8h-1"></path><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"></path><line x1="6" y1="1" x2="6" y2="4"></line><line x1="10" y1="1" x2="10" y2="4"></line><line x1="14" y1="1" x2="14" y2="4"></line></svg>
+              </span>
+              <span class="sidebar-text">Nutrition</span>
+            </a>
+          </li>
+          <li>
+            <a href="{{ url_for('progress') }}" class="sidebar-link {% if request.endpoint == 'progress' %}active{% endif %}" title="Progress">
+              <span class="sidebar-icon">
+                <svg viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+              </span>
+              <span class="sidebar-text">Progress</span>
+            </a>
+          </li>
+          <li>
+            <a href="{{ url_for('exercises') }}" class="sidebar-link {% if request.endpoint == 'exercises' %}active{% endif %}" title="Exercises">
+              <span class="sidebar-icon">
+                <svg viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
+              </span>
+              <span class="sidebar-text">Exercises</span>
+            </a>
+          </li>
+        </ul>
+
+        <div class="nav-section-title">Intelligence & Account</div>
+        <ul class="sidebar-menu">
+          <li>
+            <a href="{{ url_for('ai_assistant_page') }}" class="sidebar-link {% if request.endpoint == 'ai_assistant_page' %}active{% endif %}" title="AI Assistant">
+              <span class="sidebar-icon" style="color: #ff784e;">
+                <svg viewBox="0 0 24 24"><path d="M12 2a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2 2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z"></path><path d="M4.93 4.93a2 2 0 0 1 2.83 0l1.41 1.41a2 2 0 0 1-2.83 2.83L4.93 7.76a2 2 0 0 1 0-2.83z"></path><circle cx="12" cy="12" r="4"></circle></svg>
+              </span>
+              <span class="sidebar-text">AI Assistant</span>
+              <span class="sidebar-badge">AI</span>
+            </a>
+          </li>
+          <li>
+            <a href="{{ url_for('profile') }}" class="sidebar-link {% if request.endpoint == 'profile' %}active{% endif %}" title="Profile">
+              <span class="sidebar-icon">
+                <svg viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+              </span>
+              <span class="sidebar-text">Profile</span>
+            </a>
+          </li>
+          <li>
+            <a href="{{ url_for('settings') }}" class="sidebar-link {% if request.endpoint == 'settings' %}active{% endif %}" title="Settings">
+              <span class="sidebar-icon">
+                <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+              </span>
+              <span class="sidebar-text">Settings</span>
+            </a>
+          </li>
+        </ul>
+      </nav>
+
+      <!-- Sidebar Theme Switcher -->
+      <div class="sidebar-theme-wrapper">
+        <button type="button" class="sidebar-theme-toggle" id="sidebarThemeToggle" aria-label="Toggle Dark / Light Theme" title="Switch Theme">
+          <div class="theme-toggle-icons">
+            <span class="theme-icon-sun">
+              <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>
+            </span>
+            <span class="theme-icon-moon">
+              <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
+            </span>
+          </div>
+          <span class="sidebar-text theme-label-text">Dark Mode</span>
+          <span class="theme-status-pill">Active</span>
+        </button>
+      </div>
+
+      <!-- Sidebar User Footer -->
+      <div class="sidebar-user-footer">
+        <a href="{{ url_for('profile') }}" class="sidebar-user-card" title="Athlete Biometrics">
+          {% if g.user['profile_picture'] %}
+            <img src="{{ g.user['profile_picture'] }}" alt="{{ g.user['full_name'] }}" class="avatar-small" style="object-fit: cover;" referrerpolicy="no-referrer">
+          {% else %}
+            <div class="avatar-small">
+              {{ g.user['full_name'][0]|upper if g.user['full_name'] else 'A' }}
+            </div>
+          {% endif %}
+          <div class="sidebar-user-info">
+            <span class="sidebar-user-name">{{ g.user['full_name'] }}</span>
+            <span class="sidebar-user-role">@{{ g.user['username'] }}</span>
+          </div>
+        </a>
+        <a href="{{ url_for('logout') }}" class="sidebar-logout-btn" title="Sign Out">
+          <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none">
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+            <polyline points="16 17 21 12 16 7"></polyline>
+            <line x1="21" y1="12" x2="9" y2="12"></line>
+          </svg>
+        </a>
+      </div>
+    </aside>
+
+    <!-- Mobile Backdrop for Sidebar -->
+    <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
+
+    <!-- Main Viewport Wrap -->
+    <div class="app-main-viewport">
+      
+      <!-- Top SaaS App Bar -->
+      <header class="app-topbar">
+        <div class="topbar-left">
+          <button class="mobile-sidebar-toggle" id="mobileSidebarToggle" aria-label="Open Navigation">
+            <svg viewBox="0 0 24 24" width="22" height="22" stroke="currentColor" stroke-width="2" fill="none">
+              <line x1="3" y1="12" x2="21" y2="12"></line>
+              <line x1="3" y1="6" x2="21" y2="6"></line>
+              <line x1="3" y1="18" x2="21" y2="18"></line>
+            </svg>
+          </button>
+          <div class="topbar-breadcrumb">
+            <span class="text-dim">IronPulse</span>
+            <span class="text-dim">/</span>
+            <span class="font-bold text-main" style="text-transform: capitalize;">{{ request.endpoint|replace('_', ' ') }}</span>
+          </div>
+        </div>
+
+        <div class="topbar-right">
+          <span class="badge badge-primary">{{ g.user['fitness_goal'] }}</span>
+          <button type="button" class="theme-toggle-compact js-theme-toggle" title="Toggle Dark/Light Mode" aria-label="Toggle Theme">
+            <span class="theme-icon-sun">
+              <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>
+            </span>
+            <span class="theme-icon-moon">
+              <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
+            </span>
+          </button>
+          <a href="{{ url_for('ai_assistant_page') }}" class="btn btn-secondary btn-sm" style="display: inline-flex; align-items: center; gap: 0.35rem; color: #ff784e;">
+            <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none"><circle cx="12" cy="12" r="4"></circle></svg>
+            Ask AI
+          </a>
+          <a href="{{ url_for('profile') }}" class="topbar-avatar-btn" title="View Profile">
+            {% if g.user['profile_picture'] %}
+              <img src="{{ g.user['profile_picture'] }}" alt="{{ g.user['full_name'] }}" class="avatar-small" style="object-fit: cover;" referrerpolicy="no-referrer">
+            {% else %}
+              <div class="avatar-small">
+                {{ g.user['full_name'][0]|upper if g.user['full_name'] else 'A' }}
+              </div>
+            {% endif %}
+          </a>
+        </div>
+      </header>
+
+      <!-- Authenticated Page Content -->
+      <main class="app-content-body">
+        
+        <!-- Flash Messages -->
+        {% with messages = get_flashed_messages(with_categories=true) %}
+          {% if messages %}
+            <div class="flash-container">
+              {% for category, message in messages %}
+                <div class="alert alert-{{ category }}">
+                  <span>{{ message }}</span>
+                  <button class="alert-close" aria-label="Close Alert">&times;</button>
+                </div>
+              {% endfor %}
+            </div>
+          {% endif %}
+        {% endwith %}
+
+        {% block content %}
+          {% if not_found %}
+            <div class="card" style="text-align: center; padding: 4rem 2rem; border-color: rgba(255, 87, 34, 0.3);">
+              <h2 class="title-display" style="font-size: 3rem; margin-bottom: 0.5rem;">404</h2>
+              <p class="text-main font-semibold" style="font-size: 1.1rem;">Page Not Found</p>
+              <a href="{{ url_for('dashboard') if g.user else url_for('index') }}" class="btn btn-primary" style="margin-top: 1rem;">Return Home &rarr;</a>
+            </div>
+          {% elif server_error %}
+            <div class="card" style="text-align: center; padding: 4rem 2rem; border-color: rgba(239, 68, 68, 0.3);">
+              <h2 class="title-display" style="font-size: 3rem; margin-bottom: 0.5rem; color: #ef4444;">500</h2>
+              <p class="text-main font-semibold" style="font-size: 1.1rem;">Internal System Error</p>
+              <a href="{{ url_for('dashboard') if g.user else url_for('index') }}" class="btn btn-primary" style="margin-top: 1rem;">Return Home &rarr;</a>
+            </div>
+          {% endif %}
+        {% endblock %}
+
+      </main>
+
+      <!-- Authenticated Footer -->
+      <footer class="app-footer">
+        <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.75rem; font-size: 0.8rem; color: var(--text-dim);">
+          <div>IronPulse SaaS • Scientific Hypertrophy &amp; Overload Architecture</div>
+          <div style="display: flex; gap: 0.75rem; align-items: center;">
+            <span class="badge badge-green">Connected: #{{ g.user['id'] }}</span>
+            <span>Version 2.0 (SaaS Edition)</span>
+          </div>
+        </div>
+      </footer>
+
+    </div>
+
+  </div>
+
+  {% else %}
+  <!-- ==============================================================
+       PUBLIC SITE LAYOUT (Landing Page, Login, Register, Public Library)
+       ============================================================== -->
+  <header class="public-navbar">
+    <div class="container public-navbar-inner">
+      <a href="{{ url_for('index') }}" class="brand-logo">
+        <div class="brand-icon">
+          <svg viewBox="0 0 24 24">
+            <path d="M6 5v14M18 5v14M2 9v6M22 9v6M6 12h12M4 7h4v10H4zM16 7h4v10h-4z"/>
+          </svg>
+        </div>
+        <span>Iron<span class="text-gradient">Pulse</span></span>
+      </a>
+
+      <nav class="public-nav-links">
+        <a href="{{ url_for('index') }}#features" class="public-nav-link">Features</a>
+        <a href="{{ url_for('exercises') }}" class="public-nav-link">Exercise Library</a>
+      </nav>
+
+      <div class="public-nav-actions">
+        <button type="button" class="theme-toggle-compact js-theme-toggle" title="Toggle Dark/Light Mode" aria-label="Toggle Theme">
+          <span class="theme-icon-sun">
+            <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>
+          </span>
+          <span class="theme-icon-moon">
+            <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
+          </span>
+        </button>
+        <a href="{{ url_for('login') }}" class="btn btn-secondary btn-sm">Login</a>
+        <a href="{{ url_for('register') }}" class="btn btn-primary btn-sm">Get Started Free</a>
+      </div>
+    </div>
+  </header>
+
+  <main class="main-content">
+    <div class="container">
+      
+      <!-- Flash Messages for Public Views -->
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          <div class="flash-container">
+            {% for category, message in messages %}
+              <div class="alert alert-{{ category }}">
+                <span>{{ message }}</span>
+                <button class="alert-close" aria-label="Close Alert">&times;</button>
+              </div>
+            {% endfor %}
+          </div>
+        {% endif %}
+      {% endwith %}
+
+      <!-- Delegate to page-specific public template block -->
+      {{ self.content() }}
+
+    </div>
+  </main>
+
+  <footer class="public-footer">
+    <div class="container public-footer-inner">
+      <div class="footer-brand-col">
+        <div class="brand-logo" style="margin-bottom: 0.5rem;">
+          <div class="brand-icon" style="width: 28px; height: 28px;">
+            <svg viewBox="0 0 24 24" width="16" height="16"><path d="M6 5v14M18 5v14M2 9v6M22 9v6M6 12h12M4 7h4v10H4zM16 7h4v10h-4z"/></svg>
+          </div>
+          <span style="font-size: 1.1rem;">Iron<span class="text-gradient">Pulse</span></span>
+        </div>
+        <p class="text-xs text-muted" style="max-width: 320px;">
+          The scientific physique engineering platform. Engineered for muscle hypertrophy, progressive overload, and high-performance nutrition.
+        </p>
+      </div>
+
+      <div class="footer-links-col">
+        <div class="footer-col-title">Platform</div>
+        <a href="{{ url_for('index') }}#features">Features</a>
+        <a href="{{ url_for('exercises') }}">Exercise Catalog</a>
+        <a href="{{ url_for('login_demo') }}">Instant Demo</a>
+      </div>
+
+      <div class="footer-links-col">
+        <div class="footer-col-title">Access</div>
+        <a href="{{ url_for('login') }}">Athlete Login</a>
+        <a href="{{ url_for('register') }}">Create Account</a>
+        <a href="{{ url_for('auth_google') }}">Google OAuth</a>
+      </div>
+    </div>
+
+    <div class="container" style="border-top: 1px solid var(--border-color); margin-top: 2rem; padding-top: 1.5rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem; font-size: 0.75rem; color: var(--text-dim);">
+      <div>&copy; 2026 IronPulse. All rights reserved. Muscle Building &amp; Fitness Tracking Architecture.</div>
+      <div>
+        <span class="badge badge-primary">SQLite &amp; Flask</span>
+        <span class="badge badge-green" style="margin-left: 0.4rem;">Phase 1 Operational</span>
+      </div>
+    </div>
+  </footer>
+  {% endif %}
+
+  <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+  {% block extra_scripts %}{% endblock %}
+</body>
+</html>

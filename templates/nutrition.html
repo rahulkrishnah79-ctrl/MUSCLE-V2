@@ -1,0 +1,1620 @@
+{% extends "base.html" %}
+
+{% block title %}Nutrition & Macro Tracker - IronPulse Fitness Tracker{% endblock %}
+
+{% block extra_head %}
+<style>
+  .scan-viewfinder-wrapper {
+    position: relative;
+    width: 100%;
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    background: #000;
+    aspect-ratio: 4 / 3;
+    border: 1px solid var(--border-color);
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.4);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .scan-laser-line {
+    position: absolute;
+    top: 5%;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, #10b981, #34d399, transparent);
+    box-shadow: 0 0 8px #10b981;
+    animation: scanLaserAnim 2.2s infinite ease-in-out;
+  }
+  @keyframes scanLaserAnim {
+    0% { top: 6%; opacity: 0.8; }
+    50% { top: 94%; opacity: 1; }
+    100% { top: 6%; opacity: 0.8; }
+  }
+  .camera-shutter-btn {
+    width: 62px;
+    height: 62px;
+    border-radius: 50%;
+    background: #10b981;
+    border: 4px solid #ffffff;
+    box-shadow: 0 0 16px rgba(16, 185, 129, 0.55);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: transform 0.15s ease, background 0.15s ease;
+  }
+  .camera-shutter-btn:active {
+    transform: scale(0.92);
+    background: #059669;
+  }
+  @keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 2rem; flex-wrap: wrap; gap: 1rem;">
+  <div>
+    <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.25rem;">
+      <span class="badge badge-green">Fueling Hypertrophy</span>
+      <span class="badge badge-neutral">{{ selected_date }}</span>
+    </div>
+    <h1 class="title-display">Nutrition & Macros</h1>
+    <p class="text-muted text-sm">Muscle synthesis requires consistent amino acids and energetic caloric balance.</p>
+  </div>
+  
+  <div style="display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap;">
+    <!-- Date picker filter -->
+    <form method="GET" action="{{ url_for('nutrition') }}" style="display: flex; align-items: center; gap: 0.5rem;">
+      <input type="date" name="date" class="form-control" value="{{ selected_date }}" onchange="this.form.submit()" style="padding: 0.45rem 0.75rem; font-size: 0.85rem; width: auto;">
+    </form>
+    
+    <button class="btn btn-success" type="button" onclick="openScanFoodModal()" id="btnScanFoodTop" style="display: flex; align-items: center; gap: 0.5rem; background: linear-gradient(135deg, #10b981, #059669); border-color: #10b981; color: white;">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
+      Scan Your Food
+    </button>
+
+    <button class="btn btn-primary" data-modal-target="#searchFoodModal">
+      <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+      Search &amp; Add Food
+    </button>
+
+    <button class="btn btn-outline" data-modal-target="#customFoodModal">
+      <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+      Custom Entry
+    </button>
+
+    <button class="btn btn-outline" type="button" onclick="openResetNutritionModal()" id="btnResetNutritionTop" style="border-color: rgba(239, 68, 68, 0.4); color: #ef4444;" title="Reset today's food entries">
+      <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" style="vertical-align: middle; margin-right: 4px;"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path></svg>
+      Reset Today's Nutrition
+    </button>
+  </div>
+</div>
+
+<!-- Macro Progress Dashboard -->
+<div class="card" style="margin-bottom: 2rem;">
+  <div class="card-header">
+    <h2 class="card-title">
+      <svg viewBox="0 0 24 24"><path d="M18 8h1a4 4 0 0 1 0 8h-1"></path><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"></path></svg>
+      Daily Energy &amp; Macronutrient Progress
+    </h2>
+    <span class="badge badge-neutral">Caloric Target: {{ targets['calories'] }} kcal</span>
+  </div>
+
+  <div class="grid-4" style="margin-bottom: 1.5rem;">
+    
+    <!-- 1. Calories -->
+    <div style="background: var(--bg-card-alt); padding: 1.25rem; border-radius: var(--radius-sm); border: 1px solid var(--border-color);">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+        <span class="text-xs text-muted font-bold" style="text-transform: uppercase;">Calories (kcal)</span>
+        <span class="badge badge-primary">{{ percentages['calories'] }}%</span>
+      </div>
+      <div style="font-size: 1.75rem; font-weight: 800; color: var(--text-heading);">
+        {{ totals['calories'] }} <span class="text-xs font-semibold text-muted">/ {{ targets['calories'] }}</span>
+      </div>
+      <div class="progress-container" style="margin: 0.5rem 0 0.25rem;">
+        <div class="progress-bar-bg">
+          <div class="progress-bar-fill primary" style="width: {{ percentages['calories'] }}%;"></div>
+        </div>
+      </div>
+      <p class="text-xs {% if remaining['calories'] >= 0 %}text-dim{% else %}text-amber font-semibold{% endif %}" style="margin-top: 0.35rem;">
+        {% if remaining['calories'] >= 0 %}
+          <strong>{{ remaining['calories'] }} kcal</strong> remaining
+        {% else %}
+          +{{ -remaining['calories'] }} kcal in surplus
+        {% endif %}
+      </p>
+    </div>
+
+    <!-- 2. Protein -->
+    <div style="background: var(--bg-card-alt); padding: 1.25rem; border-radius: var(--radius-sm); border: 1px solid var(--border-color);">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+        <span class="text-xs text-muted font-bold" style="text-transform: uppercase;">Protein (g)</span>
+        <span class="badge badge-green">{{ percentages['protein'] }}%</span>
+      </div>
+      <div style="font-size: 1.75rem; font-weight: 800; color: #34d399;">
+        {{ totals['protein'] }} <span class="text-xs font-semibold text-muted">/ {{ targets['protein'] }}g</span>
+      </div>
+      <div class="progress-container" style="margin: 0.5rem 0 0.25rem;">
+        <div class="progress-bar-bg">
+          <div class="progress-bar-fill green" style="width: {{ percentages['protein'] }}%;"></div>
+        </div>
+      </div>
+      <p class="text-xs {% if remaining['protein'] > 0 %}text-dim{% else %}text-green font-semibold{% endif %}" style="margin-top: 0.35rem;">
+        {% if remaining['protein'] > 0 %}
+          <strong>{{ remaining['protein'] }}g</strong> remaining
+        {% else %}
+          Protein Target Achieved! ✓
+        {% endif %}
+      </p>
+    </div>
+
+    <!-- 3. Carbs -->
+    <div style="background: var(--bg-card-alt); padding: 1.25rem; border-radius: var(--radius-sm); border: 1px solid var(--border-color);">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+        <span class="text-xs text-muted font-bold" style="text-transform: uppercase;">Carbohydrates (g)</span>
+        <span class="badge badge-cyan">{{ percentages['carbs'] }}%</span>
+      </div>
+      <div style="font-size: 1.75rem; font-weight: 800; color: #38bdf8;">
+        {{ totals['carbs'] }} <span class="text-xs font-semibold text-muted">/ {{ targets['carbs'] }}g</span>
+      </div>
+      <div class="progress-container" style="margin: 0.5rem 0 0.25rem;">
+        <div class="progress-bar-bg">
+          <div class="progress-bar-fill cyan" style="width: {{ percentages['carbs'] }}%;"></div>
+        </div>
+      </div>
+      <p class="text-xs text-dim" style="margin-top: 0.35rem;">
+        {% if remaining['carbs'] >= 0 %}
+          {{ remaining['carbs'] }}g remaining
+        {% else %}
+          +{{ -remaining['carbs'] }}g surplus
+        {% endif %}
+      </p>
+    </div>
+
+    <!-- 4. Fats -->
+    <div style="background: var(--bg-card-alt); padding: 1.25rem; border-radius: var(--radius-sm); border: 1px solid var(--border-color);">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+        <span class="text-xs text-muted font-bold" style="text-transform: uppercase;">Dietary Fats (g)</span>
+        <span class="badge badge-amber">{{ percentages['fats'] }}%</span>
+      </div>
+      <div style="font-size: 1.75rem; font-weight: 800; color: #fbbf24;">
+        {{ totals['fats'] }} <span class="text-xs font-semibold text-muted">/ {{ targets['fats'] }}g</span>
+      </div>
+      <div class="progress-container" style="margin: 0.5rem 0 0.25rem;">
+        <div class="progress-bar-bg">
+          <div class="progress-bar-fill amber" style="width: {{ percentages['fats'] }}%;"></div>
+        </div>
+      </div>
+      <p class="text-xs text-dim" style="margin-top: 0.35rem;">
+        {% if remaining['fats'] >= 0 %}
+          {{ remaining['fats'] }}g remaining
+        {% else %}
+          +{{ -remaining['fats'] }}g surplus
+        {% endif %}
+      </p>
+    </div>
+
+  </div>
+
+  <!-- Caloric breakdown info row -->
+  <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid var(--border-color); padding-top: 1rem; flex-wrap: wrap; gap: 0.75rem;">
+    <div class="text-xs text-muted">
+      Calculated Macro Energy: 
+      <strong class="text-green">{{ (totals['protein'] * 4)|round|int }} kcal Protein</strong> | 
+      <strong class="text-cyan">{{ (totals['carbs'] * 4)|round|int }} kcal Carbs</strong> | 
+      <strong class="text-amber">{{ (totals['fats'] * 9)|round|int }} kcal Fats</strong>
+    </div>
+    <a href="{{ url_for('profile') }}" class="text-xs text-primary font-semibold">Edit Daily Macro Goals &rarr;</a>
+  </div>
+</div>
+
+<!-- Quick Muscle-Building Food Staples Bar -->
+<div class="card" style="margin-bottom: 2rem; background: linear-gradient(145deg, #121824 0%, #162032 100%);">
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; flex-wrap: wrap; gap: 0.5rem;">
+    <div>
+      <h3 class="text-sm font-bold" style="color: #ffffff; text-transform: uppercase; letter-spacing: 0.04em;">
+        ⚡ Essential Muscle-Building Foods (Quick Log)
+      </h3>
+      <p class="text-xs text-muted">Click any staple below to instantly pre-fill serving &amp; macro quantities.</p>
+    </div>
+    <span class="badge badge-primary">Hypertrophy Essentials</span>
+  </div>
+
+  <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;" id="staplesContainer">
+    {% set staple_names = ['Eggs (Boiled / Whole)', 'Cow Milk (Toned / Low Fat)', 'Curd / Dahi (Greek / Plain)', 'Paneer (Cottage Cheese)', 'Soy Chunks (Nutrela / Textured Soy)', 'Dal (Cooked Yellow Toor / Moong)', 'Peanuts (Roasted / Unsalted)', 'Rolled Oats', 'White Basmati Rice (Cooked)', 'Chicken Breast (Boneless / Skinless Grilled)', 'Fish (Salmon Fillet Grilled)'] %}
+    {% for f in food_library %}
+      {% if f['name'] in staple_names %}
+        <button type="button" class="btn btn-secondary btn-sm staple-chip" 
+                onclick="quickSelectFood({{ f['id'] }}, '{{ f['name'] }}', '{{ f['serving_unit'] }}', {{ f['calories'] }}, {{ f['protein_g'] }}, {{ f['carbs_g'] }}, {{ f['fats_g'] }})"
+                style="padding: 0.35rem 0.75rem; font-size: 0.8rem; border-color: rgba(255, 87, 34, 0.25);">
+          <strong>{{ f['name'].split('(')[0].strip() }}</strong>
+          <span style="color: #34d399; font-size: 0.72rem; margin-left: 0.3rem;">{{ f['protein_g'] }}g P</span>
+        </button>
+      {% endif %}
+    {% endfor %}
+  </div>
+</div>
+
+<!-- Categorized Meals Sections (Breakfast, Lunch, Dinner, Snacks) -->
+{% set meal_windows = [
+  {'key': 'Breakfast', 'title': 'Breakfast', 'icon': '🍳', 'badge': 'badge-primary', 'desc': 'Kickstart protein synthesis & morning energy'},
+  {'key': 'Lunch', 'title': 'Lunch', 'icon': '🥗', 'badge': 'badge-cyan', 'desc': 'Sustained midday amino acids and complex carbs'},
+  {'key': 'Dinner', 'title': 'Dinner', 'icon': '🍗', 'badge': 'badge-amber', 'desc': 'Recovery meal rich in protein & micronutrients'},
+  {'key': 'Snack', 'title': 'Snacks & Pre/Post Workout', 'icon': '⚡', 'badge': 'badge-green', 'desc': 'Intra-day fuel, shakes & anabolic window nourishment'}
+] %}
+
+<div style="display: flex; flex-direction: column; gap: 1.5rem; margin-bottom: 2rem;">
+  {% for mw in meal_windows %}
+    {% set m_list = grouped_meals[mw.key] %}
+    {% set sub = meal_subtotals[mw.key] %}
+    <div class="card">
+      <div class="card-header" style="flex-wrap: wrap; gap: 0.75rem;">
+        <div style="display: flex; align-items: center; gap: 0.75rem;">
+          <span style="font-size: 1.4rem;">{{ mw.icon }}</span>
+          <div>
+            <div style="display: flex; align-items: center; gap: 0.5rem;">
+              <h2 class="card-title" style="margin-bottom: 0;">{{ mw.title }}</h2>
+              <span class="badge {{ mw.badge }}">{{ m_list|length }} items</span>
+            </div>
+            <p class="text-xs text-dim" style="margin-top: 0.15rem;">{{ mw.desc }}</p>
+          </div>
+        </div>
+
+        <div style="display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;">
+          <!-- Meal Subtotals -->
+          <div class="text-xs" style="background: var(--bg-card-alt); padding: 0.4rem 0.85rem; border-radius: var(--radius-sm); border: 1px solid var(--border-color);">
+            <strong class="text-main">{{ sub['calories'] }} kcal</strong> • 
+            <span style="color: #34d399; font-weight: 600;">{{ sub['protein']|round(1) }}g P</span> • 
+            <span style="color: #38bdf8; font-weight: 600;">{{ sub['carbs']|round(1) }}g C</span> • 
+            <span style="color: #fbbf24; font-weight: 600;">{{ sub['fats']|round(1) }}g F</span>
+          </div>
+
+          <button class="btn btn-outline btn-sm" type="button" onclick="openScanFoodModal('{{ mw.key }}')" style="border-color: rgba(16, 185, 129, 0.4); color: #34d399; display: inline-flex; align-items: center; gap: 0.35rem;">
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
+            Scan Food
+          </button>
+
+          <button class="btn btn-secondary btn-sm" onclick="openAddModalForMeal('{{ mw.key }}')">
+            <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+            Add to {{ mw.key }}
+          </button>
+        </div>
+      </div>
+
+      {% if m_list %}
+        <div class="table-responsive">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Food Item</th>
+                <th>Quantity / Servings</th>
+                <th>Calories</th>
+                <th>Protein</th>
+                <th>Carbs</th>
+                <th>Fats</th>
+                <th style="text-align: right;">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for m in m_list %}
+                <tr>
+                  <td>
+                    <div style="font-weight: 700; color: #ffffff; display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap;">
+                      <span>{{ m['food_name'] }}</span>
+                      {% if m.get('logged_via') == 'camera' or m.get('is_estimate') == 1 %}
+                        <span class="badge badge-green" style="font-size: 0.62rem; padding: 0.1rem 0.35rem; background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3);" title="Nutritional estimate logged via camera scan">
+                          📷 Est
+                        </span>
+                      {% endif %}
+                    </div>
+                  </td>
+                  <td>
+                    <span class="text-sm font-semibold text-muted">
+                      {{ m.get('quantity', 1.0) }} {{ m.get('serving_unit', 'serving') }}
+                    </span>
+                  </td>
+                  <td><span class="font-bold text-main">{{ m['calories'] }} kcal</span></td>
+                  <td><span class="font-bold" style="color: #34d399;">{{ m['protein_g'] }} g</span></td>
+                  <td><span class="font-semibold" style="color: #38bdf8;">{{ m['carbs_g'] }} g</span></td>
+                  <td><span class="font-semibold" style="color: #fbbf24;">{{ m['fats_g'] }} g</span></td>
+                  <td style="text-align: right; white-space: nowrap;">
+                    <button type="button" class="btn btn-secondary btn-sm" 
+                            onclick="openEditFoodModal({{ m['id'] }}, '{{ m['food_name']|replace("'", "\\'") }}', {{ m.get('quantity', 1.0) }}, '{{ m.get('serving_unit', 'serving')|replace("'", "\\'") }}', {{ m['calories'] }}, {{ m['protein_g'] }}, {{ m['carbs_g'] }}, {{ m['fats_g'] }}, '{{ m['meal_type'] }}')" 
+                            style="padding: 0.25rem 0.5rem; font-size: 0.75rem; margin-right: 0.35rem;" 
+                            title="Edit quantity & portion">
+                      ✎ Edit
+                    </button>
+                    <form action="{{ url_for('delete_nutrition', log_id=m['id']) }}" method="POST" onsubmit="return confirm('Remove {{ m['food_name'] }}?');" style="display: inline;">
+                      <input type="hidden" name="date" value="{{ selected_date }}">
+                      <button type="submit" class="btn btn-danger btn-sm" style="padding: 0.25rem 0.5rem; font-size: 0.75rem;" title="Remove food entry">
+                        &times; Remove
+                      </button>
+                    </form>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <div style="padding: 1.5rem; text-align: center; color: var(--text-dim); font-size: 0.85rem;">
+          No foods logged for {{ mw.title.lower() }} yet.
+          <button class="btn btn-outline btn-sm" onclick="openAddModalForMeal('{{ mw.key }}')" style="margin-left: 0.5rem;">
+            + Add Food
+          </button>
+        </div>
+      {% endif %}
+    </div>
+  {% endfor %}
+</div>
+
+<!-- ================= MODALS ================= -->
+
+<!-- 1. Modal: Search & Add Food from Food Library -->
+<div class="modal-backdrop" id="searchFoodModal">
+  <div class="modal-dialog" style="max-width: 680px;">
+    <div class="modal-header">
+      <div>
+        <h3 class="text-lg font-bold" style="color: var(--text-heading);">Search &amp; Add Food</h3>
+        <p class="text-xs text-muted">Select from common muscle-building foods or search items</p>
+      </div>
+      <button type="button" class="alert-close" data-modal-close aria-label="Close modal">&times;</button>
+    </div>
+
+    <div class="modal-body">
+      <!-- Search Input & Category Filter -->
+      <div style="display: flex; gap: 0.5rem; margin-bottom: 1rem;">
+        <input type="text" id="foodSearchInput" class="form-control" placeholder="Search foods (e.g. Eggs, Paneer, Chicken, Oats, Dal...)" oninput="filterFoodList()" style="flex: 1;">
+        <select id="foodCategoryFilter" class="form-control" onchange="filterFoodList()" style="width: auto;">
+          <option value="All">All Categories</option>
+          <option value="Dairy & Eggs">Dairy &amp; Eggs</option>
+          <option value="Plant Protein">Plant Protein</option>
+          <option value="Poultry & Meat">Poultry &amp; Meat</option>
+          <option value="Seafood">Seafood</option>
+          <option value="Legumes & Pulses">Legumes &amp; Pulses</option>
+          <option value="Grains & Carbs">Grains &amp; Carbs</option>
+          <option value="Nuts & Seeds">Nuts &amp; Seeds</option>
+          <option value="Supplements">Supplements</option>
+        </select>
+      </div>
+
+      <!-- Food Results List -->
+      <div id="foodSearchResults" style="max-height: 280px; overflow-y: auto; display: flex; flex-direction: column; gap: 0.5rem; padding-right: 0.25rem; margin-bottom: 1.25rem;">
+        {% for food in food_library %}
+          <div class="food-item-row" data-id="{{ food['id'] }}" data-name="{{ food['name']|lower }}" data-raw-name="{{ food['name'] }}" data-cat="{{ food['category'] }}"
+               data-calories="{{ food['calories'] }}" data-protein="{{ food['protein_g'] }}" data-carbs="{{ food['carbs_g'] }}" data-fats="{{ food['fats_g'] }}"
+               data-unit="{{ food['serving_unit'] }}" data-size="{{ food['serving_size'] }}"
+               onclick="selectModalFoodItem(this)"
+               style="background: var(--bg-card-alt); border: 1px solid var(--border-color); padding: 0.75rem 1rem; border-radius: var(--radius-sm); cursor: pointer; transition: var(--transition); display: flex; justify-content: space-between; align-items: center;">
+            <div>
+              <div style="display: flex; align-items: center; gap: 0.5rem;">
+                <span class="font-bold text-main">{{ food['name'] }}</span>
+                {% if food['is_muscle_building'] == 1 %}
+                  <span class="badge badge-green text-xs" style="font-size: 0.65rem;">Staple</span>
+                {% endif %}
+              </div>
+              <p class="text-xs text-muted" style="margin-top: 0.2rem;">Serving: {{ food['serving_size'] }}</p>
+            </div>
+            <div style="text-align: right;">
+              <span class="font-bold text-main">{{ food['calories'] }} kcal</span>
+              <div class="text-xs" style="color: #34d399; font-weight: 600;">{{ food['protein_g'] }}g P</div>
+            </div>
+          </div>
+        {% endfor %}
+        <div id="noFoodFoundAlert" style="display: none; padding: 1.5rem; text-align: center; color: var(--text-dim); font-size: 0.85rem;">
+          No matching foods found in library. Use <strong>Custom Entry</strong> or <strong>Scan Your Food</strong> to log this meal.
+        </div>
+      </div>
+
+      <!-- Configuration form when food is selected -->
+      <form id="addSelectedFoodForm" action="{{ url_for('add_nutrition') }}" method="POST" onsubmit="return validateFoodSelectionForm(event);">
+        <input type="hidden" name="date" value="{{ selected_date }}">
+        <input type="hidden" id="selectedFoodId" name="food_id" value="">
+        <input type="hidden" id="selectedFoodName" name="food_name" value="">
+        <input type="hidden" id="selectedFoodUnit" name="serving_unit" value="serving">
+        <input type="hidden" id="selectedCalories" name="calories" value="0">
+        <input type="hidden" id="selectedProtein" name="protein_g" value="0">
+        <input type="hidden" id="selectedCarbs" name="carbs_g" value="0">
+        <input type="hidden" id="selectedFats" name="fats_g" value="0">
+
+        <div style="background: rgba(255, 87, 34, 0.08); border: 1px solid rgba(255, 87, 34, 0.3); border-radius: var(--radius-sm); padding: 1rem; margin-bottom: 1rem;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+            <div>
+              <span class="text-xs text-muted font-bold" style="text-transform: uppercase;">Selected Item:</span>
+              <h4 id="displaySelectedName" class="text-base font-bold text-main" style="margin-top: 0.1rem;">Choose a food above</h4>
+            </div>
+            <span id="displayServingInfo" class="badge badge-neutral">--</span>
+          </div>
+
+          <div class="grid-2">
+            <div class="form-group" style="margin-bottom: 0;">
+              <label for="mealTypeSelect" class="form-label text-xs">Add To Meal Window *</label>
+              <select id="mealTypeSelect" name="meal_type" class="form-control" required>
+                <option value="Breakfast">Breakfast</option>
+                <option value="Lunch" selected>Lunch</option>
+                <option value="Dinner">Dinner</option>
+                <option value="Snack">Snacks &amp; Pre/Post Workout</option>
+              </select>
+            </div>
+
+            <div class="form-group" style="margin-bottom: 0;">
+              <label for="quantityInput" class="form-label text-xs">Quantity / Number of Servings *</label>
+              <input type="number" step="0.25" min="0.1" max="50" id="quantityInput" name="quantity" class="form-control" value="1.0" oninput="recalcScaledMacros()" required>
+            </div>
+          </div>
+
+          <!-- Live Scaled Nutrition Preview -->
+          <div style="display: flex; justify-content: space-between; margin-top: 0.85rem; padding-top: 0.75rem; border-top: 1px solid rgba(255, 255, 255, 0.08); font-size: 0.8rem;">
+            <span>Scaled Total: <strong id="scaledCalories" class="text-main">0 kcal</strong></span>
+            <span><strong id="scaledProtein" style="color: #34d399;">0g</strong> Protein</span>
+            <span><strong id="scaledCarbs" style="color: #38bdf8;">0g</strong> Carbs</span>
+            <span><strong id="scaledFats" style="color: #fbbf24;">0g</strong> Fats</span>
+          </div>
+        </div>
+
+        <div class="modal-footer" style="padding: 0; border: none;">
+          <button type="button" class="btn btn-secondary" data-modal-close>Cancel</button>
+          <button type="submit" id="submitFoodBtn" class="btn btn-primary">Add Food Entry</button>
+        </div>
+      </form>
+
+    </div>
+  </div>
+</div>
+
+<!-- 2. Modal: Custom Food Entry Form -->
+<div class="modal-backdrop" id="customFoodModal">
+  <div class="modal-dialog">
+    <form action="{{ url_for('add_nutrition') }}" method="POST">
+      <div class="modal-header">
+        <h3 class="text-lg font-bold" style="color: var(--text-heading);">Log Custom Food Entry</h3>
+        <button type="button" class="alert-close" data-modal-close aria-label="Close modal">&times;</button>
+      </div>
+
+      <div class="modal-body">
+        
+        <div class="grid-2">
+          <div class="form-group">
+            <label for="custom_date" class="form-label">Date</label>
+            <input type="date" id="custom_date" name="date" class="form-control" value="{{ selected_date }}" required>
+          </div>
+          <div class="form-group">
+            <label for="custom_meal_type" class="form-label">Meal Window</label>
+            <select id="custom_meal_type" name="meal_type" class="form-control" required>
+              <option value="Breakfast">Breakfast</option>
+              <option value="Lunch" selected>Lunch</option>
+              <option value="Dinner">Dinner</option>
+              <option value="Snack">Snacks &amp; Pre/Post Workout</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="custom_food_name" class="form-label">Food Description *</label>
+          <input type="text" id="custom_food_name" name="food_name" class="form-control" placeholder="e.g. 250g Paneer Bhurji with 2 Rotis" required>
+        </div>
+
+        <div class="grid-2">
+          <div class="form-group">
+            <label for="custom_quantity" class="form-label">Serving Quantity</label>
+            <input type="number" step="0.5" id="custom_quantity" name="quantity" class="form-control" value="1.0">
+          </div>
+          <div class="form-group">
+            <label for="custom_unit" class="form-label">Unit Description</label>
+            <input type="text" id="custom_unit" name="serving_unit" class="form-control" value="plate / serving">
+          </div>
+        </div>
+
+        <div class="grid-4" style="background: var(--bg-card-alt); padding: 1rem; border-radius: var(--radius-sm); margin-bottom: 1.25rem; border: 1px solid var(--border-color);">
+          <div class="form-group" style="margin-bottom: 0;">
+            <label for="custom_calories" class="form-label text-xs">Calories (kcal) *</label>
+            <input type="number" id="custom_calories" name="calories" class="form-control" placeholder="550" required min="1">
+          </div>
+          <div class="form-group" style="margin-bottom: 0;">
+            <label for="custom_protein_g" class="form-label text-xs" style="color: #34d399;">Protein (g)</label>
+            <input type="number" step="0.5" id="custom_protein_g" name="protein_g" class="form-control" placeholder="35" value="0">
+          </div>
+          <div class="form-group" style="margin-bottom: 0;">
+            <label for="custom_carbs_g" class="form-label text-xs" style="color: #38bdf8;">Carbs (g)</label>
+            <input type="number" step="0.5" id="custom_carbs_g" name="carbs_g" class="form-control" placeholder="45" value="0">
+          </div>
+          <div class="form-group" style="margin-bottom: 0;">
+            <label for="custom_fats_g" class="form-label text-xs" style="color: #fbbf24;">Fats (g)</label>
+            <input type="number" step="0.5" id="custom_fats_g" name="fats_g" class="form-control" placeholder="12" value="0">
+          </div>
+        </div>
+
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-modal-close>Cancel</button>
+        <button type="submit" class="btn btn-success">Save Custom Entry</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- 3. Modal: Edit Logged Food Entry Quantity & Macros -->
+<div class="modal-backdrop" id="editFoodLogModal">
+  <div class="modal-dialog" style="max-width: 520px;">
+    <form id="editFoodLogForm" method="POST" action="">
+      <input type="hidden" name="date" value="{{ selected_date }}">
+      <div class="modal-header">
+        <div>
+          <h3 class="text-base font-bold text-main" id="editModalFoodName">Edit Food Portion</h3>
+          <p class="text-xs text-muted" id="editModalSubtext">Adjust servings and recalculate nutrition</p>
+        </div>
+        <button type="button" class="alert-close" onclick="closeEditFoodModal()" aria-label="Close modal">&times;</button>
+      </div>
+
+      <div class="modal-body">
+        <div class="grid-2" style="margin-bottom: 1rem;">
+          <div class="form-group" style="margin-bottom: 0;">
+            <label for="editMealType" class="form-label text-xs">Meal Window</label>
+            <select id="editMealType" name="meal_type" class="form-control" required>
+              <option value="Breakfast">Breakfast</option>
+              <option value="Lunch">Lunch</option>
+              <option value="Dinner">Dinner</option>
+              <option value="Snack">Snacks &amp; Pre/Post Workout</option>
+            </select>
+          </div>
+          <div class="form-group" style="margin-bottom: 0;">
+            <label for="editQuantity" class="form-label text-xs">Quantity / Servings *</label>
+            <input type="number" step="0.25" min="0.1" max="50" id="editQuantity" name="quantity" class="form-control" value="1.0" oninput="recalcEditMacros()" required>
+          </div>
+        </div>
+
+        <div style="background: var(--bg-card-alt); border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 0.85rem; margin-bottom: 1rem;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+            <span class="text-xs font-bold text-muted">Recalculated Nutrition:</span>
+            <span id="editServingUnitBadge" class="badge badge-neutral">1 serving</span>
+          </div>
+          <div class="grid-4" style="gap: 0.5rem;">
+            <div>
+              <label for="editCalories" class="form-label text-xs font-bold text-main">Calories (kcal)</label>
+              <input type="number" id="editCalories" name="calories" class="form-control font-bold" min="1" required>
+            </div>
+            <div>
+              <label for="editProtein" class="form-label text-xs font-bold" style="color: #34d399;">Protein (g)</label>
+              <input type="number" step="0.1" id="editProtein" name="protein_g" class="form-control" min="0">
+            </div>
+            <div>
+              <label for="editCarbs" class="form-label text-xs font-bold" style="color: #38bdf8;">Carbs (g)</label>
+              <input type="number" step="0.1" id="editCarbs" name="carbs_g" class="form-control" min="0">
+            </div>
+            <div>
+              <label for="editFats" class="form-label text-xs font-bold" style="color: #fbbf24;">Fat (g)</label>
+              <input type="number" step="0.1" id="editFats" name="fats_g" class="form-control" min="0">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" onclick="closeEditFoodModal()">Cancel</button>
+        <button type="submit" class="btn btn-primary">Update Portion</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+  // Selected food item base macros
+  let activeBaseFood = null;
+  let activeEditBase = null;
+
+  function filterFoodList() {
+    const q = (document.getElementById('foodSearchInput')?.value || '').toLowerCase().trim();
+    const cat = document.getElementById('foodCategoryFilter')?.value || 'All';
+    const rows = document.querySelectorAll('.food-item-row');
+    const noMatchAlert = document.getElementById('noFoodFoundAlert');
+    let visibleCount = 0;
+
+    rows.forEach(row => {
+      const name = row.getAttribute('data-name') || '';
+      const itemCat = row.getAttribute('data-cat') || '';
+      const matchesText = !q || name.includes(q);
+      const matchesCat = (cat === 'All') || (itemCat === cat);
+
+      if (matchesText && matchesCat) {
+        row.style.display = 'flex';
+        visibleCount++;
+      } else {
+        row.style.display = 'none';
+      }
+    });
+
+    if (noMatchAlert) {
+      noMatchAlert.style.display = (visibleCount === 0) ? 'block' : 'none';
+    }
+  }
+
+  function selectModalFoodItem(element) {
+    if (!element) return;
+    document.querySelectorAll('.food-item-row').forEach(r => {
+      r.style.borderColor = 'var(--border-color)';
+      r.style.background = 'var(--bg-card-alt)';
+    });
+
+    element.style.borderColor = 'var(--primary)';
+    element.style.background = 'var(--bg-card-hover)';
+
+    activeBaseFood = {
+      id: element.getAttribute('data-id'),
+      name: element.getAttribute('data-raw-name') || element.querySelector('.text-main').textContent.trim(),
+      servingUnit: element.getAttribute('data-unit') || 'serving',
+      servingSize: element.getAttribute('data-size') || '1 serving',
+      calories: parseFloat(element.getAttribute('data-calories')) || 0,
+      protein: parseFloat(element.getAttribute('data-protein')) || 0,
+      carbs: parseFloat(element.getAttribute('data-carbs')) || 0,
+      fats: parseFloat(element.getAttribute('data-fats')) || 0
+    };
+
+    document.getElementById('selectedFoodId').value = activeBaseFood.id;
+    document.getElementById('selectedFoodName').value = activeBaseFood.name;
+    document.getElementById('selectedFoodUnit').value = activeBaseFood.servingUnit;
+    document.getElementById('displaySelectedName').textContent = activeBaseFood.name;
+    document.getElementById('displayServingInfo').textContent = activeBaseFood.servingSize;
+
+    recalcScaledMacros();
+  }
+
+  function recalcScaledMacros() {
+    if (!activeBaseFood) return;
+    const qtyInput = document.getElementById('quantityInput');
+    let qty = parseFloat(qtyInput ? qtyInput.value : 1.0);
+    if (isNaN(qty) || qty <= 0) {
+      qty = 1.0;
+    }
+
+    const scaledCals = Math.max(1, Math.round(activeBaseFood.calories * qty));
+    const scaledP = (activeBaseFood.protein * qty).toFixed(1);
+    const scaledC = (activeBaseFood.carbs * qty).toFixed(1);
+    const scaledF = (activeBaseFood.fats * qty).toFixed(1);
+
+    document.getElementById('scaledCalories').textContent = scaledCals + ' kcal';
+    document.getElementById('scaledProtein').textContent = scaledP + 'g';
+    document.getElementById('scaledCarbs').textContent = scaledC + 'g';
+    document.getElementById('scaledFats').textContent = scaledF + 'g';
+
+    document.getElementById('selectedCalories').value = scaledCals;
+    document.getElementById('selectedProtein').value = scaledP;
+    document.getElementById('selectedCarbs').value = scaledC;
+    document.getElementById('selectedFats').value = scaledF;
+  }
+
+  function validateFoodSelectionForm(e) {
+    const name = (document.getElementById('selectedFoodName')?.value || '').trim();
+    const qty = parseFloat(document.getElementById('quantityInput')?.value);
+
+    if (!name) {
+      if (e) e.preventDefault();
+      alert('Please select a food from the list above before adding.');
+      return false;
+    }
+    if (isNaN(qty) || qty <= 0) {
+      if (e) e.preventDefault();
+      alert('Please specify a serving quantity greater than 0.');
+      document.getElementById('quantityInput')?.focus();
+      return false;
+    }
+    return true;
+  }
+
+  function quickSelectFood(id, name, unit, cals, p, c, f) {
+    // Open Search modal and select this staple
+    const modal = document.querySelector('#searchFoodModal');
+    if (modal) {
+      modal.classList.add('open');
+      modal.classList.add('active');
+      document.body.style.overflow = 'hidden';
+
+      const row = document.querySelector(`.food-item-row[data-id="${id}"]`);
+      if (row) {
+        selectModalFoodItem(row);
+        row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }
+  }
+
+  function openAddModalForMeal(mealType) {
+    if (mealType) {
+      const select = document.getElementById('mealTypeSelect');
+      if (select) select.value = mealType;
+    }
+    const modal = document.querySelector('#searchFoodModal');
+    if (modal) {
+      modal.classList.add('open');
+      modal.classList.add('active');
+      document.body.style.overflow = 'hidden';
+
+      // Auto-select first item if none is currently selected
+      if (!activeBaseFood) {
+        const firstRow = document.querySelector('.food-item-row');
+        if (firstRow) selectModalFoodItem(firstRow);
+      }
+
+      // Auto focus search
+      setTimeout(() => {
+        document.getElementById('foodSearchInput')?.focus();
+      }, 150);
+    }
+  }
+
+  function openEditFoodModal(id, name, qty, unit, calories, protein, carbs, fats, mealType) {
+    const modal = document.getElementById('editFoodLogModal');
+    if (!modal) return;
+
+    const parsedQty = parseFloat(qty) || 1.0;
+    activeEditBase = {
+      id: id,
+      name: name,
+      originalQty: parsedQty,
+      unit: unit,
+      perUnitCalories: calories / parsedQty,
+      perUnitProtein: protein / parsedQty,
+      perUnitCarbs: carbs / parsedQty,
+      perUnitFats: fats / parsedQty
+    };
+
+    document.getElementById('editModalFoodName').textContent = `Edit ${name}`;
+    document.getElementById('editModalSubtext').textContent = `Portion description: ${unit}`;
+    document.getElementById('editServingUnitBadge').textContent = unit;
+    document.getElementById('editFoodLogForm').action = `/nutrition/edit/${id}`;
+    document.getElementById('editMealType').value = mealType;
+    document.getElementById('editQuantity').value = qty;
+    document.getElementById('editCalories').value = calories;
+    document.getElementById('editProtein').value = protein;
+    document.getElementById('editCarbs').value = carbs;
+    document.getElementById('editFats').value = fats;
+
+    modal.classList.add('open');
+    modal.classList.add('active');
+    document.body.style.overflow = 'hidden';
+  }
+
+  function closeEditFoodModal() {
+    const modal = document.getElementById('editFoodLogModal');
+    if (modal) {
+      modal.classList.remove('open');
+      modal.classList.remove('active');
+      document.body.style.overflow = '';
+    }
+  }
+
+  function recalcEditMacros() {
+    if (!activeEditBase) return;
+    const qty = parseFloat(document.getElementById('editQuantity').value) || 1.0;
+    document.getElementById('editCalories').value = Math.max(1, Math.round(activeEditBase.perUnitCalories * qty));
+    document.getElementById('editProtein').value = (activeEditBase.perUnitProtein * qty).toFixed(1);
+    document.getElementById('editCarbs').value = (activeEditBase.perUnitCarbs * qty).toFixed(1);
+    document.getElementById('editFats').value = (activeEditBase.perUnitFats * qty).toFixed(1);
+  }
+
+  // Pre-select first item on page load so modal is never in an unselected state
+  document.addEventListener('DOMContentLoaded', () => {
+    const firstRow = document.querySelector('.food-item-row');
+    if (firstRow && !activeBaseFood) {
+      selectModalFoodItem(firstRow);
+    }
+  });
+
+  // ==========================================
+  // Camera Food Scanner Controller (Phase 5 / Vision Upgrade)
+  // ==========================================
+  const clientFoodLibrary = [
+    {% for f in food_library %}
+    {
+      id: {{ f['id'] }},
+      name: {{ f['name']|tojson }},
+      category: {{ f['category']|tojson }},
+      serving_size: {{ f['serving_size']|tojson }},
+      serving_unit: {{ f['serving_unit']|tojson }},
+      calories: {{ f['calories'] }},
+      protein_g: {{ f['protein_g'] }},
+      carbs_g: {{ f['carbs_g'] }},
+      fats_g: {{ f['fats_g'] }}
+    },
+    {% endfor %}
+  ];
+
+  let cameraStream = null;
+  let currentFacingMode = 'environment'; // default to mobile rear camera
+  let capturedImageDataUrl = null;
+  let currentScannedFoods = []; // Active list of detected food objects
+  let activeReplaceIndex = 0; // Which food item is being changed if user picks another food
+
+  async function openScanFoodModal(mealType) {
+    if (mealType) {
+      const mealSelect = document.getElementById('scanMealTypeSelect');
+      if (mealSelect) mealSelect.value = mealType;
+    }
+    const modal = document.getElementById('scanFoodModal');
+    if (modal) {
+      modal.classList.add('active');
+      modal.classList.add('open');
+      document.body.style.overflow = 'hidden';
+    }
+
+    // Reset view stages
+    document.getElementById('scanStageCamera').style.display = 'block';
+    document.getElementById('scanStageAnalyzing').style.display = 'none';
+    document.getElementById('scanStageNoFood').style.display = 'none';
+    document.getElementById('scanStageConfirm').style.display = 'none';
+    document.getElementById('cameraPermDeniedAlert').style.display = 'none';
+    document.getElementById('cameraUnavailableAlert').style.display = 'none';
+    toggleChangeFoodSection(false);
+
+    // Start video stream
+    await startCameraStream();
+  }
+
+  function closeScanFoodModal() {
+    stopCameraStream();
+    const modal = document.getElementById('scanFoodModal');
+    if (modal) {
+      modal.classList.remove('active');
+      modal.classList.remove('open');
+      document.body.style.overflow = '';
+    }
+  }
+
+  async function startCameraStream() {
+    stopCameraStream();
+    const video = document.getElementById('scanCameraVideo');
+    const loadingMsg = document.getElementById('cameraLoadingMsg');
+    const permAlert = document.getElementById('cameraPermDeniedAlert');
+    const unavailAlert = document.getElementById('cameraUnavailableAlert');
+
+    if (permAlert) permAlert.style.display = 'none';
+    if (unavailAlert) unavailAlert.style.display = 'none';
+    if (loadingMsg) loadingMsg.style.display = 'flex';
+
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      if (loadingMsg) loadingMsg.style.display = 'none';
+      if (unavailAlert) unavailAlert.style.display = 'block';
+      return;
+    }
+
+    try {
+      const constraints = {
+        video: {
+          facingMode: currentFacingMode === 'user' ? 'user' : { ideal: 'environment' },
+          width: { ideal: 1280 },
+          height: { ideal: 720 }
+        },
+        audio: false
+      };
+      cameraStream = await navigator.mediaDevices.getUserMedia(constraints);
+      if (video) {
+        video.srcObject = cameraStream;
+        await video.play().catch(() => {});
+      }
+      if (loadingMsg) loadingMsg.style.display = 'none';
+    } catch (err) {
+      if (loadingMsg) loadingMsg.style.display = 'none';
+      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+        if (permAlert) permAlert.style.display = 'block';
+      } else {
+        // Fallback constraint attempt without specific facing mode
+        try {
+          cameraStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+          if (video) {
+            video.srcObject = cameraStream;
+            await video.play().catch(() => {});
+          }
+        } catch (fallbackErr) {
+          if (unavailAlert) unavailAlert.style.display = 'block';
+        }
+      }
+    }
+  }
+
+  function stopCameraStream() {
+    if (cameraStream) {
+      cameraStream.getTracks().forEach(track => {
+        try { track.stop(); } catch(e) {}
+      });
+      cameraStream = null;
+    }
+    const video = document.getElementById('scanCameraVideo');
+    if (video) {
+      video.srcObject = null;
+    }
+  }
+
+  async function flipCameraFacingMode() {
+    currentFacingMode = (currentFacingMode === 'environment') ? 'user' : 'environment';
+    await startCameraStream();
+  }
+
+  function captureFoodSnapshot() {
+    const video = document.getElementById('scanCameraVideo');
+    const canvas = document.getElementById('scanCaptureCanvas');
+    if (!video) return;
+
+    canvas.width = video.videoWidth || 640;
+    canvas.height = video.videoHeight || 480;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    capturedImageDataUrl = canvas.toDataURL('image/jpeg', 0.85);
+
+    stopCameraStream();
+    processFoodImage(capturedImageDataUrl, null);
+  }
+
+  function handleScanFileUpload(event) {
+    const file = event.target.files && event.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      capturedImageDataUrl = e.target.result;
+      stopCameraStream();
+      processFoodImage(capturedImageDataUrl, file.name);
+    };
+    reader.readAsDataURL(file);
+  }
+
+  async function processFoodImage(imageDataUrl, filename = null) {
+    const thumb = document.getElementById('scanCapturedThumb');
+    if (thumb) thumb.src = imageDataUrl;
+
+    // Switch to analyzing stage
+    document.getElementById('scanStageCamera').style.display = 'none';
+    document.getElementById('scanStageNoFood').style.display = 'none';
+    document.getElementById('scanStageConfirm').style.display = 'none';
+    document.getElementById('scanStageAnalyzing').style.display = 'block';
+
+    try {
+      const payload = { image_data: imageDataUrl };
+      if (filename) payload.filename = filename;
+
+      const response = await fetch('/nutrition/scan-food', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Requested-With': 'XMLHttpRequest'
+        },
+        body: JSON.stringify(payload)
+      });
+
+      const data = await response.json();
+      displayScanResults(data);
+    } catch (err) {
+      displayScanResults({
+        success: false,
+        status: 'no_food_detected',
+        confidence: 0.0,
+        message: 'Endpoint error analyzing image. Please take a clearer photo of your food.'
+      });
+    }
+  }
+
+  function displayScanResults(result) {
+    document.getElementById('scanStageAnalyzing').style.display = 'none';
+
+    // 1. Food Not Detected (Non-food, low confidence < 0.50, or unidentifiable)
+    const hasDetectedFoods = Array.isArray(result.foods) && result.foods.length > 0;
+    const isConfident = (result.confidence === undefined || result.confidence === null || result.confidence >= 0.50);
+    if (!result.success || result.status !== 'detected' || !hasDetectedFoods || !isConfident) {
+      document.getElementById('scanStageCamera').style.display = 'none';
+      document.getElementById('scanStageConfirm').style.display = 'none';
+      document.getElementById('scanStageNoFood').style.display = 'block';
+
+      const headline = document.getElementById('noFoodHeadline');
+      if (headline) headline.textContent = 'Food not detected';
+
+      const msg = document.getElementById('noFoodDetectedMessage');
+      if (msg) {
+        msg.textContent = result.message || 'Please take a clearer photo of your food.';
+      }
+
+      const reasonSpan = document.getElementById('noFoodReasonDetail');
+      if (reasonSpan) {
+        reasonSpan.textContent = result.reason ? `(${result.reason})` : '';
+      }
+      return;
+    }
+
+    // 2. Food Detected! Show confirmation stage
+    document.getElementById('scanStageCamera').style.display = 'none';
+    document.getElementById('scanStageNoFood').style.display = 'none';
+    document.getElementById('scanStageConfirm').style.display = 'block';
+
+    const badge = document.getElementById('scanDetectionBadge');
+    const headline = document.getElementById('scanStatusHeadline');
+    const subtext = document.getElementById('scanStatusSubtext');
+
+    const confPct = Math.round((result.confidence || 0.90) * 100);
+    badge.className = 'badge badge-green';
+    badge.textContent = `🍽️ Detected (${confPct}% Confidence)`;
+    headline.textContent = `Detected: ${result.detected_food || 'Meal'}`;
+    subtext.textContent = result.notes || 'Review detected food and portion size before confirming.';
+
+    // Populate currentScannedFoods
+    currentScannedFoods = (result.foods || []).map(f => ({
+      name: f.name || f.display_name || 'Food Item',
+      display_name: f.display_name || f.name || 'Food Item',
+      matched_database_item: f.matched_database_item,
+      category: f.category || 'General',
+      serving_size: f.serving_size || '1 serving',
+      serving_unit: f.serving_unit || 'serving',
+      quantity: parseFloat(f.quantity) || 1.0,
+      base_calories: parseFloat(f.base_calories || f.calories) || 0,
+      base_protein_g: parseFloat(f.base_protein_g || f.protein_g) || 0,
+      base_carbs_g: parseFloat(f.base_carbs_g || f.carbs_g) || 0,
+      base_fats_g: parseFloat(f.base_fats_g || f.fats_g) || 0,
+      calories: parseInt(f.calories) || 0,
+      protein_g: parseFloat(f.protein_g) || 0,
+      carbs_g: parseFloat(f.carbs_g) || 0,
+      fats_g: parseFloat(f.fats_g) || 0,
+      is_estimate: f.is_estimate ? 1 : 0
+    }));
+
+    if (currentScannedFoods.length === 0) {
+      currentScannedFoods = [{
+        name: result.detected_food || 'Meal Item',
+        display_name: result.detected_food || 'Meal Item',
+        serving_size: result.serving || '1 serving',
+        serving_unit: 'serving',
+        quantity: 1.0,
+        base_calories: result.nutrition?.calories || 200,
+        base_protein_g: result.nutrition?.protein_g || 10,
+        base_carbs_g: result.nutrition?.carbs_g || 30,
+        base_fats_g: result.nutrition?.fats_g || 5,
+        calories: result.nutrition?.calories || 200,
+        protein_g: result.nutrition?.protein_g || 10,
+        carbs_g: result.nutrition?.carbs_g || 30,
+        fats_g: result.nutrition?.fats_g || 5,
+        is_estimate: 1
+      }];
+    }
+
+    renderScannedFoodsList();
+  }
+
+  function renderScannedFoodsList() {
+    const container = document.getElementById('scannedFoodsCardsContainer');
+    if (!container) return;
+    container.innerHTML = '';
+
+    const isMulti = currentScannedFoods.length > 1;
+
+    currentScannedFoods.forEach((item, index) => {
+      const card = document.createElement('div');
+      card.className = 'scanned-food-item-card';
+      card.style.cssText = 'background: var(--bg-card-alt); border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 0.85rem; margin-bottom: 0.75rem;';
+
+      card.innerHTML = `
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 0.5rem; margin-bottom: 0.6rem;">
+          <div>
+            <div style="display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap;">
+              <span class="font-bold text-main" style="font-size: 0.95rem;">${isMulti ? (index + 1) + '. ' : ''}${item.name}</span>
+              ${item.is_estimate ? '<span class="badge badge-neutral" style="font-size: 0.62rem;">Estimate</span>' : '<span class="badge badge-green" style="font-size: 0.62rem;">DB Match</span>'}
+            </div>
+            <p class="text-xs text-muted" style="margin-top: 0.15rem;">Serving: ${item.serving_size}</p>
+          </div>
+          <button type="button" class="btn btn-outline btn-sm" style="font-size: 0.7rem; padding: 0.2rem 0.5rem;" onclick="openChangeFoodForIndex(${index})">
+            Change Food
+          </button>
+        </div>
+
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; flex-wrap: wrap; border-top: 1px solid rgba(255,255,255,0.06); padding-top: 0.5rem;">
+          <div style="display: flex; align-items: center; gap: 0.35rem;">
+            <label class="text-xs text-muted" style="margin: 0; font-weight: 600;">Quantity:</label>
+            <input type="number" step="0.25" min="0.25" max="15" value="${item.quantity}"
+                   class="form-control" style="width: 76px; padding: 0.25rem 0.4rem; height: 30px; font-weight: 700;"
+                   oninput="handleItemQtyChange(${index}, this.value)">
+          </div>
+
+          <!-- Individual item macros -->
+          <div style="display: flex; gap: 0.65rem; align-items: center; font-size: 0.82rem;">
+            <span class="font-bold text-main">${item.calories} kcal</span>
+            <span style="color: #34d399; font-weight: 600;">${item.protein_g}g P</span>
+            <span style="color: #38bdf8; font-weight: 600;">${item.carbs_g}g C</span>
+            <span style="color: #fbbf24; font-weight: 600;">${item.fats_g}g F</span>
+          </div>
+        </div>
+      `;
+      container.appendChild(card);
+    });
+
+    renderTotalNutritionSummary();
+  }
+
+  function handleItemQtyChange(index, newQtyVal) {
+    let qty = parseFloat(newQtyVal);
+    if (isNaN(qty) || qty <= 0) qty = 1.0;
+    const item = currentScannedFoods[index];
+    if (!item) return;
+
+    item.quantity = qty;
+    item.calories = Math.max(1, Math.round(item.base_calories * qty));
+    item.protein_g = Number((item.base_protein_g * qty).toFixed(1));
+    item.carbs_g = Number((item.base_carbs_g * qty).toFixed(1));
+    item.fats_g = Number((item.base_fats_g * qty).toFixed(1));
+
+    renderScannedFoodsList();
+  }
+
+  function renderTotalNutritionSummary() {
+    const totalBox = document.getElementById('scannedTotalNutritionBox');
+    if (!totalBox) return;
+
+    const totCals = currentScannedFoods.reduce((acc, it) => acc + it.calories, 0);
+    const totProt = Number(currentScannedFoods.reduce((acc, it) => acc + it.protein_g, 0).toFixed(1));
+    const totCarbs = Number(currentScannedFoods.reduce((acc, it) => acc + it.carbs_g, 0).toFixed(1));
+    const totFats = Number(currentScannedFoods.reduce((acc, it) => acc + it.fats_g, 0).toFixed(1));
+
+    document.getElementById('scannedTotalCalories').textContent = totCals + ' kcal';
+    document.getElementById('scannedTotalProtein').textContent = totProt + 'g';
+    document.getElementById('scannedTotalCarbs').textContent = totCarbs + 'g';
+    document.getElementById('scannedTotalFats').textContent = totFats + 'g';
+  }
+
+  function openChangeFoodForIndex(index) {
+    activeReplaceIndex = index;
+    toggleChangeFoodSection(true);
+    const input = document.getElementById('scanChangeFoodSearch');
+    if (input) {
+      input.value = '';
+      input.focus();
+    }
+    filterScanChangeFoods('');
+  }
+
+  function toggleChangeFoodSection(show) {
+    const sec = document.getElementById('scanChangeFoodSection');
+    if (sec) {
+      sec.style.display = show ? 'block' : 'none';
+      if (show) {
+        sec.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
+    }
+  }
+
+  function filterScanChangeFoods(query) {
+    const list = document.getElementById('scanChangeFoodResultsList');
+    if (!list) return;
+    list.innerHTML = '';
+    const q = (query || '').toLowerCase().trim();
+
+    const matches = clientFoodLibrary.filter(f => !q || f.name.toLowerCase().includes(q) || f.category.toLowerCase().includes(q));
+
+    if (matches.length === 0) {
+      list.innerHTML = '<div style="padding: 0.6rem; text-align: center; color: var(--text-dim); font-size: 0.78rem;">No database foods match your search.</div>';
+      return;
+    }
+
+    matches.slice(0, 8).forEach(food => {
+      const row = document.createElement('div');
+      row.style.cssText = 'padding: 0.5rem 0.75rem; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 4px; display: flex; justify-content: space-between; align-items: center; cursor: pointer; transition: background 0.15s ease;';
+      row.onmouseover = () => row.style.background = 'var(--bg-card-hover)';
+      row.onmouseout = () => row.style.background = 'var(--bg-card)';
+      row.onclick = () => selectReplacementFood(food);
+
+      row.innerHTML = `
+        <div>
+          <div style="font-weight: 700; font-size: 0.82rem; color: var(--text-main);">${food.name}</div>
+          <div style="font-size: 0.7rem; color: var(--text-muted);">${food.serving_size}</div>
+        </div>
+        <div style="text-align: right; font-size: 0.75rem;">
+          <span style="font-weight: 700; color: var(--text-heading);">${food.calories} kcal</span>
+          <span style="color: #34d399; margin-left: 0.35rem; font-weight: 600;">${food.protein_g}g P</span>
+        </div>
+      `;
+      list.appendChild(row);
+    });
+  }
+
+  function selectReplacementFood(food) {
+    if (!currentScannedFoods[activeReplaceIndex]) {
+      currentScannedFoods[activeReplaceIndex] = {};
+    }
+    const currentQty = currentScannedFoods[activeReplaceIndex].quantity || 1.0;
+
+    currentScannedFoods[activeReplaceIndex] = {
+      name: food.name,
+      display_name: food.name,
+      matched_database_item: food.name,
+      category: food.category,
+      serving_size: food.serving_size,
+      serving_unit: food.serving_unit,
+      quantity: currentQty,
+      base_calories: food.calories,
+      base_protein_g: food.protein_g,
+      base_carbs_g: food.carbs_g,
+      base_fats_g: food.fats_g,
+      calories: Math.max(1, Math.round(food.calories * currentQty)),
+      protein_g: Number((food.protein_g * currentQty).toFixed(1)),
+      carbs_g: Number((food.carbs_g * currentQty).toFixed(1)),
+      fats_g: Number((food.fats_g * currentQty).toFixed(1)),
+      is_estimate: 0
+    };
+
+    toggleChangeFoodSection(false);
+    renderScannedFoodsList();
+  }
+
+  async function retakeFoodPhoto() {
+    document.getElementById('scanStageNoFood').style.display = 'none';
+    document.getElementById('scanStageConfirm').style.display = 'none';
+    document.getElementById('scanStageAnalyzing').style.display = 'none';
+    document.getElementById('scanStageCamera').style.display = 'block';
+    toggleChangeFoodSection(false);
+    await startCameraStream();
+  }
+
+  async function confirmAndLogScannedFood() {
+    if (!currentScannedFoods || currentScannedFoods.length === 0) {
+      alert('No food items to log. Please scan or select a food.');
+      return;
+    }
+
+    const mealTypeSelect = document.getElementById('scanMealTypeSelect');
+    const mealType = mealTypeSelect ? mealTypeSelect.value : 'Lunch';
+
+    const confirmBtn = document.getElementById('btnConfirmScannedFood');
+    if (confirmBtn) {
+      confirmBtn.disabled = true;
+      confirmBtn.innerHTML = '<span style="display: inline-block; width: 13px; height: 13px; border: 2px solid #fff; border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite; margin-right: 0.35rem;"></span> Adding to Log...';
+    }
+
+    try {
+      const payload = {
+        date: '{{ selected_date }}',
+        meal_type: mealType,
+        logged_via: 'camera',
+        items: currentScannedFoods.map(it => ({
+          food_name: it.name,
+          serving_unit: it.serving_unit || 'serving',
+          quantity: it.quantity,
+          calories: it.calories,
+          protein_g: it.protein_g,
+          carbs_g: it.carbs_g,
+          fats_g: it.fats_g,
+          is_estimate: it.is_estimate || 0
+        }))
+      };
+
+      const res = await fetch('/nutrition/add', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Requested-With': 'XMLHttpRequest'
+        },
+        body: JSON.stringify(payload)
+      });
+
+      const resData = await res.json();
+      if (resData.success) {
+        closeScanFoodModal();
+        // Refresh page to reflect new logged food and updated daily macro summary
+        window.location.href = `/nutrition?date={{ selected_date }}`;
+      } else {
+        alert(resData.message || 'Failed to add food to nutrition log.');
+        if (confirmBtn) {
+          confirmBtn.disabled = false;
+          confirmBtn.textContent = 'Confirm & Add to Log';
+        }
+      }
+    } catch (err) {
+      alert('Network error while saving food log. Please try again.');
+      if (confirmBtn) {
+        confirmBtn.disabled = false;
+        confirmBtn.textContent = 'Confirm & Add to Log';
+      }
+    }
+  }
+
+  // Ensure camera streams are stopped if user clicks outside backdrop or modal closes
+  document.addEventListener('DOMContentLoaded', () => {
+    const scanModal = document.getElementById('scanFoodModal');
+    if (scanModal) {
+      scanModal.addEventListener('click', (e) => {
+        if (e.target === scanModal) {
+          closeScanFoodModal();
+        }
+      });
+    }
+  });
+</script>
+
+<!-- ================= MODAL: SCAN YOUR FOOD (CAMERA RECOGNITION) ================= -->
+<div class="modal-backdrop" id="scanFoodModal">
+  <div class="modal-dialog" style="max-width: 640px;">
+    <div class="modal-header">
+      <div style="display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap;">
+        <span class="badge badge-green" style="display: inline-flex; align-items: center; gap: 0.3rem;">
+          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
+          Food Scanner
+        </span>
+        <h3 class="text-base font-bold text-main" id="scanModalHeaderTitle">Scan Your Food</h3>
+      </div>
+      <button type="button" class="alert-close" onclick="closeScanFoodModal()" aria-label="Close modal">&times;</button>
+    </div>
+
+    <div class="modal-body" style="padding: 1.25rem;">
+      
+      <!-- STAGE 1: Live Camera Viewfinder -->
+      <div id="scanStageCamera" style="display: block;">
+        
+        <!-- Viewfinder Box -->
+        <div class="scan-viewfinder-wrapper" style="margin-bottom: 1rem;">
+          <video id="scanCameraVideo" autoplay playsinline muted style="width: 100%; height: 100%; object-fit: cover; display: block;"></video>
+          <canvas id="scanCaptureCanvas" style="display: none;"></canvas>
+
+          <!-- Reticle & Laser Overlay -->
+          <div id="scanReticleOverlay" style="position: absolute; top: 12%; left: 12%; right: 12%; bottom: 12%; border: 2px dashed rgba(16, 185, 129, 0.7); border-radius: 12px; pointer-events: none; box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.3);">
+            <div style="position: absolute; width: 14px; height: 14px; top: -2px; left: -2px; border-width: 3px 0 0 3px; border-color: #10b981; border-style: solid; border-top-left-radius: 6px;"></div>
+            <div style="position: absolute; width: 14px; height: 14px; top: -2px; right: -2px; border-width: 3px 3px 0 0; border-color: #10b981; border-style: solid; border-top-right-radius: 6px;"></div>
+            <div style="position: absolute; width: 14px; height: 14px; bottom: -2px; left: -2px; border-width: 0 0 3px 3px; border-color: #10b981; border-style: solid; border-bottom-left-radius: 6px;"></div>
+            <div style="position: absolute; width: 14px; height: 14px; bottom: -2px; right: -2px; border-width: 0 3px 3px 0; border-color: #10b981; border-style: solid; border-bottom-right-radius: 6px;"></div>
+            <div class="scan-laser-line"></div>
+          </div>
+
+          <!-- Loading Camera Indicator -->
+          <div id="cameraLoadingMsg" style="position: absolute; color: #ffffff; font-size: 0.9rem; font-weight: 600; display: flex; flex-direction: column; align-items: center; gap: 0.5rem; text-shadow: 0 2px 4px rgba(0,0,0,0.8);">
+            <div style="width: 28px; height: 28px; border: 3px solid rgba(255,255,255,0.2); border-top-color: #10b981; border-radius: 50%; animation: spin 0.8s linear infinite;"></div>
+            <span>Accessing camera...</span>
+          </div>
+        </div>
+
+        <!-- Camera Permission / Error Alerts -->
+        <div id="cameraPermDeniedAlert" class="alert alert-danger" style="display: none; font-size: 0.82rem; margin-bottom: 1rem;">
+          <div style="font-weight: 700; margin-bottom: 0.2rem;">🔒 Camera Permission Denied</div>
+          <span>Browser camera access was denied. Please allow camera permissions in your browser address bar/settings, or click <strong>Upload Photo</strong> below.</span>
+        </div>
+
+        <div id="cameraUnavailableAlert" class="alert alert-warning" style="display: none; font-size: 0.82rem; margin-bottom: 1rem;">
+          <div style="font-weight: 700; margin-bottom: 0.2rem;">📷 Camera Unavailable</div>
+          <span>No webcam or camera device was found. You can choose or capture a photo using the file picker below.</span>
+        </div>
+
+        <!-- Camera Controls -->
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; flex-wrap: wrap;">
+          <button type="button" class="btn btn-secondary btn-sm" id="btnFlipCamera" onclick="flipCameraFacingMode()" title="Flip Front / Rear Camera" style="display: inline-flex; align-items: center; gap: 0.35rem;">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 10c0-4.418-3.582-8-8-8s-8 3.582-8 8c0 2.21 0 4.42 2 6l-2 2h6v-6l-2 2c-1.33-1.33-2-2.67-2-4 0-3.314 2.686-6 6-6s6 2.686 6 6h2z"/></svg>
+            Flip Camera
+          </button>
+
+          <!-- Circular Shutter Button -->
+          <button type="button" class="camera-shutter-btn" id="btnShutterCapture" onclick="captureFoodSnapshot()" title="Capture Food Photo">
+            <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="#ffffff" stroke-width="2"><circle cx="12" cy="12" r="3.5"></circle><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path></svg>
+          </button>
+
+          <!-- Upload Photo File Input -->
+          <div>
+            <input type="file" id="scanFileInput" accept="image/*" capture="environment" style="display: none;" onchange="handleScanFileUpload(event)">
+            <button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById('scanFileInput').click()" style="display: inline-flex; align-items: center; gap: 0.35rem;">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+              Upload Photo
+            </button>
+          </div>
+        </div>
+
+        <p class="text-xs text-muted" style="text-align: center; margin-top: 0.75rem;">
+          Hold plate steady inside the reticle. Works with mobile cameras, webcams, and photo uploads.
+        </p>
+
+      </div>
+
+      <!-- STAGE 2: Analyzing Image -->
+      <div id="scanStageAnalyzing" style="display: none; text-align: center; padding: 2.5rem 1rem;">
+        <div style="width: 44px; height: 44px; border: 4px solid rgba(255,255,255,0.15); border-top-color: #10b981; border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 1.25rem;"></div>
+        <h4 class="text-base font-bold text-main" style="margin-bottom: 0.35rem;">Analyzing your food...</h4>
+        <p class="text-xs text-muted" style="margin-bottom: 1.25rem;">Identifying food items &amp; calculating nutrition...</p>
+        <div style="max-width: 260px; margin: 0 auto; display: flex; flex-direction: column; gap: 0.45rem;">
+          <div class="skeleton-text long" style="height: 10px; margin: 0 auto;"></div>
+          <div class="skeleton-text medium" style="height: 10px; margin: 0 auto;"></div>
+        </div>
+      </div>
+
+      <!-- STAGE 3A: Food Not Detected (Failure state) -->
+      <div id="scanStageNoFood" style="display: none; text-align: center; padding: 2.5rem 1.25rem;">
+        <div style="width: 58px; height: 58px; border-radius: 50%; background: rgba(239, 68, 68, 0.12); color: #ef4444; display: flex; align-items: center; justify-content: center; margin: 0 auto 1rem; font-size: 1.75rem;">
+          📷
+        </div>
+        <h3 class="text-lg font-bold text-main" id="noFoodHeadline" style="margin-bottom: 0.35rem;">Food not detected</h3>
+        <p class="text-sm text-muted" id="noFoodDetectedMessage" style="max-width: 380px; margin: 0 auto 0.5rem; line-height: 1.5;">
+          Please take a clearer photo of your food.
+        </p>
+        <p class="text-xs text-dim" id="noFoodReasonDetail" style="margin-bottom: 1.5rem;"></p>
+        <div style="display: flex; justify-content: center; gap: 0.75rem; flex-wrap: wrap;">
+          <button type="button" class="btn btn-secondary" onclick="closeScanFoodModal()">
+            Cancel
+          </button>
+          <button type="button" class="btn btn-success" id="btnTryAgainScan" onclick="retakeFoodPhoto()">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 0.35rem;"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
+            Try Again
+          </button>
+        </div>
+      </div>
+
+      <!-- STAGE 3B: Food Detected / Confirmation Stage -->
+      <div id="scanStageConfirm" style="display: none;">
+        
+        <!-- Captured Snapshot Preview -->
+        <div style="display: flex; gap: 1rem; align-items: center; background: var(--bg-card-alt); border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 0.75rem; margin-bottom: 1rem;">
+          <img id="scanCapturedThumb" src="" alt="Captured Food" style="width: 88px; height: 72px; object-fit: cover; border-radius: 6px; border: 1px solid var(--border-color); flex-shrink: 0; background: #000;">
+          <div style="flex: 1; min-width: 0;">
+            <div id="scanDetectionBadge" class="badge badge-green" style="font-size: 0.7rem; margin-bottom: 0.25rem;">
+              🍽️ Food Detected
+            </div>
+            <div id="scanStatusHeadline" class="text-sm font-bold text-main" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+              Review Detected Meal
+            </div>
+            <div id="scanStatusSubtext" class="text-xs text-muted" style="margin-top: 0.15rem;">
+              Adjust portion or change items before confirming.
+            </div>
+          </div>
+          <button type="button" class="btn btn-secondary btn-sm" onclick="retakeFoodPhoto()" title="Retake Photo" style="font-size: 0.75rem; padding: 0.3rem 0.6rem;">
+            Retake Photo
+          </button>
+        </div>
+
+        <!-- Meal Window Selector -->
+        <div style="margin-bottom: 0.85rem;">
+          <label for="scanMealTypeSelect" class="form-label text-xs font-bold text-main" style="margin-bottom: 0.3rem;">Meal Window *</label>
+          <select id="scanMealTypeSelect" class="form-control" required style="font-weight: 600;">
+            <option value="Breakfast">Breakfast</option>
+            <option value="Lunch" selected>Lunch</option>
+            <option value="Dinner">Dinner</option>
+            <option value="Snack">Snacks &amp; Pre/Post Workout</option>
+          </select>
+        </div>
+
+        <!-- Detected Food Cards (Single or Multiple items) -->
+        <div style="margin-bottom: 0.85rem;">
+          <label class="form-label text-xs font-bold text-main" style="margin-bottom: 0.35rem;">
+            Detected Food Item(s)
+          </label>
+          <div id="scannedFoodsCardsContainer">
+            <!-- Dynamically populated food cards with individual portions & macros -->
+          </div>
+        </div>
+
+        <!-- Total Summary Card -->
+        <div id="scannedTotalNutritionBox" style="background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: var(--radius-sm); padding: 0.85rem; margin-bottom: 1rem;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.45rem;">
+            <span class="text-xs font-bold text-main" style="text-transform: uppercase; letter-spacing: 0.04em;">Total Meal Nutrition</span>
+            <span class="badge badge-green" style="font-size: 0.65rem;">Summary</span>
+          </div>
+          <div class="grid-4" style="gap: 0.5rem; text-align: center;">
+            <div style="background: var(--bg-card); padding: 0.4rem; border-radius: 4px; border: 1px solid var(--border-color);">
+              <div class="text-xs text-muted" style="font-size: 0.68rem;">Calories</div>
+              <div id="scannedTotalCalories" class="font-bold text-main" style="font-size: 0.95rem;">0 kcal</div>
+            </div>
+            <div style="background: var(--bg-card); padding: 0.4rem; border-radius: 4px; border: 1px solid var(--border-color);">
+              <div class="text-xs text-muted" style="font-size: 0.68rem;">Protein</div>
+              <div id="scannedTotalProtein" class="font-bold" style="color: #34d399; font-size: 0.95rem;">0.0g</div>
+            </div>
+            <div style="background: var(--bg-card); padding: 0.4rem; border-radius: 4px; border: 1px solid var(--border-color);">
+              <div class="text-xs text-muted" style="font-size: 0.68rem;">Carbs</div>
+              <div id="scannedTotalCarbs" class="font-bold" style="color: #38bdf8; font-size: 0.95rem;">0.0g</div>
+            </div>
+            <div style="background: var(--bg-card); padding: 0.4rem; border-radius: 4px; border: 1px solid var(--border-color);">
+              <div class="text-xs text-muted" style="font-size: 0.68rem;">Fat</div>
+              <div id="scannedTotalFats" class="font-bold" style="color: #fbbf24; font-size: 0.95rem;">0.0g</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Inline Change Food Selector (Hidden by default, shown when user clicks Change Food) -->
+        <div id="scanChangeFoodSection" style="display: none; background: var(--bg-card-alt); border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 0.85rem; margin-bottom: 1rem;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+            <span class="text-xs font-bold text-main">Select Food From Database:</span>
+            <button type="button" class="btn btn-secondary btn-sm" style="font-size: 0.68rem; padding: 0.15rem 0.45rem;" onclick="toggleChangeFoodSection(false)">&times; Close</button>
+          </div>
+          <input type="text" id="scanChangeFoodSearch" class="form-control" placeholder="Search database foods (e.g. Rice, Dosa, Dal, Chicken...)" oninput="filterScanChangeFoods(this.value)" style="margin-bottom: 0.5rem;">
+          <div id="scanChangeFoodResultsList" style="max-height: 160px; overflow-y: auto; display: flex; flex-direction: column; gap: 0.35rem;"></div>
+        </div>
+
+        <!-- Prominent Estimation Disclaimer Notice -->
+        <div class="alert alert-warning" style="margin-bottom: 1rem; font-size: 0.75rem; line-height: 1.45; border-left: 3px solid #f59e0b; padding: 0.6rem 0.8rem;">
+          <strong>⚠️ Nutritional Estimates Notice:</strong> Caloric and macronutrient values are nutritional <strong>ESTIMATES</strong> based on standard portion densities. Camera scanning cannot determine exact calories or cooking oils. Adjust portion or item above if needed.
+        </div>
+
+        <!-- Action Buttons: Confirm & Add to Log, Change Food, Retake Photo, Cancel -->
+        <div style="display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
+          <div style="display: flex; gap: 0.5rem;">
+            <button type="button" class="btn btn-secondary" onclick="retakeFoodPhoto()">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
+              Retake Photo
+            </button>
+            <button type="button" class="btn btn-outline" id="btnChangeFoodMain" onclick="openChangeFoodForIndex(0)">
+              ✎ Change Food
+            </button>
+          </div>
+
+          <div style="display: flex; gap: 0.5rem;">
+            <button type="button" class="btn btn-secondary" onclick="closeScanFoodModal()">Cancel</button>
+            <button type="button" class="btn btn-success" id="btnConfirmScannedFood" onclick="confirmAndLogScannedFood()">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"></polyline></svg>
+              Confirm
+            </button>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- ================= MODAL: RESET TODAY'S NUTRITION (Requirement 2) ================= -->
+<div class="modal-backdrop" id="resetNutritionModal" style="z-index: 1060;">
+  <div class="modal-dialog" style="max-width: 480px; background: var(--bg-card); border: 1px solid rgba(239, 68, 68, 0.35); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg);">
+    <div class="modal-header" style="border-bottom: 1px solid var(--border-color); padding: 1.25rem 1.5rem;">
+      <div style="display: flex; align-items: center; gap: 0.5rem;">
+        <span class="badge badge-danger">Nutrition Reset</span>
+        <h3 class="text-base font-bold text-main" style="margin: 0; color: #ef4444;">Reset today's nutrition?</h3>
+      </div>
+      <button type="button" class="alert-close" onclick="closeResetNutritionModal()" aria-label="Close modal">&times;</button>
+    </div>
+    <div class="modal-body" style="padding: 1.5rem;">
+      <p style="font-size: 0.95rem; color: var(--text-main); margin-bottom: 0.75rem; font-weight: 600;">
+        This will remove all food entries recorded today.
+      </p>
+      <div style="background: rgba(255, 255, 255, 0.04); border-left: 3px solid #ff5722; padding: 0.75rem 0.9rem; border-radius: 4px; font-size: 0.8rem; color: var(--text-muted); line-height: 1.45;">
+        ℹ️ <strong>Safety Guarantee:</strong> Only meals logged for today (<strong class="text-main">{{ selected_date }}</strong>) will be removed. Your nutrition history from previous days will remain intact.
+      </div>
+    </div>
+    <div class="modal-footer" style="border-top: 1px solid var(--border-color); padding: 1rem 1.5rem; gap: 0.75rem;">
+      <button type="button" class="btn btn-secondary" onclick="closeResetNutritionModal()">
+        Cancel
+      </button>
+      <form action="{{ url_for('reset_nutrition_today') }}" method="POST" style="display: inline; margin: 0;">
+        <input type="hidden" name="date" value="{{ selected_date }}">
+        <button type="submit" class="btn btn-danger" id="btnConfirmResetNutrition">
+          Reset Nutrition
+        </button>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script>
+  function openResetNutritionModal() {
+    const modal = document.getElementById('resetNutritionModal');
+    if (modal) {
+      modal.classList.add('active');
+      modal.classList.add('open');
+      document.body.style.overflow = 'hidden';
+    }
+  }
+
+  function closeResetNutritionModal() {
+    const modal = document.getElementById('resetNutritionModal');
+    if (modal) {
+      modal.classList.remove('active');
+      modal.classList.remove('open');
+      document.body.style.overflow = '';
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', function() {
+    const resetModal = document.getElementById('resetNutritionModal');
+    if (resetModal) {
+      resetModal.addEventListener('click', function(e) {
+        if (e.target === resetModal) closeResetNutritionModal();
+      });
+    }
+  });
+
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+      const resetModal = document.getElementById('resetNutritionModal');
+      if (resetModal && resetModal.classList.contains('active')) {
+        closeResetNutritionModal();
+      }
+    }
+  });
+</script>
+{% endblock %}

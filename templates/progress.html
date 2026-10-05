@@ -1,0 +1,676 @@
+{% extends "base.html" %}
+
+{% block title %}Fitness Progress & Transformation Dashboard - IronPulse{% endblock %}
+
+{% block extra_head %}
+<!-- Chart.js for responsive dark fitness analytics -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+{% endblock %}
+
+{% block content %}
+<div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 2rem; flex-wrap: wrap; gap: 1rem;">
+  <div>
+    <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.25rem;">
+      <span class="badge badge-purple">Physique Transformation</span>
+      <span class="badge badge-green">Live Analytics</span>
+    </div>
+    <h1 class="title-display">Progress &amp; Physique Dashboard</h1>
+    <p class="text-muted text-sm">Track body composition, circumferential hypertrophy metrics, and training consistency over time.</p>
+  </div>
+  
+  <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+    <button class="btn btn-outline" type="button" onclick="openResetProgressModal()" id="btnResetProgressTop" style="border-color: rgba(239, 68, 68, 0.4); color: #ef4444;" title="Reset body measurements and progress logs">
+      <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" style="vertical-align: middle; margin-right: 4px;"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path></svg>
+      Reset Progress
+    </button>
+    <button class="btn btn-primary" data-modal-target="#logProgressModal">
+      <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+      Log New Measurement
+    </button>
+  </div>
+</div>
+
+<!-- 4 Key Stat Cards (Current Weight, Starting Weight, Total Change, Workout Completion %) -->
+<div class="grid-4" style="margin-bottom: 2rem;">
+  
+  <!-- 1. Current Weight -->
+  <div class="stat-card">
+    <div class="stat-info">
+      <span class="stat-label">Current Weight</span>
+      <span class="stat-value">{{ summary['current_weight'] }} <span class="text-sm font-semibold text-muted">kg</span></span>
+      <span class="stat-sub text-cyan">
+        Goal: {{ summary['target_weight'] }} kg
+      </span>
+    </div>
+    <div class="stat-icon primary">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 14 10"></polyline></svg>
+    </div>
+  </div>
+
+  <!-- 2. Starting Weight -->
+  <div class="stat-card">
+    <div class="stat-info">
+      <span class="stat-label">Starting Weight</span>
+      <span class="stat-value">{{ summary['starting_weight'] }} <span class="text-sm font-semibold text-muted">kg</span></span>
+      <span class="stat-sub text-muted">
+        Initial program baseline
+      </span>
+    </div>
+    <div class="stat-icon purple">
+      <svg viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
+    </div>
+  </div>
+
+  <!-- 3. Total Weight Change -->
+  <div class="stat-card">
+    <div class="stat-info">
+      <span class="stat-label">Total Weight Change</span>
+      <span class="stat-value">
+        {% if summary['total_weight_change'] > 0 %}
+          +{{ summary['total_weight_change'] }}
+        {% else %}
+          {{ summary['total_weight_change'] }}
+        {% endif %}
+        <span class="text-sm font-semibold text-muted">kg</span>
+      </span>
+      <span class="stat-sub {% if summary['total_weight_change'] > 0 %}text-green{% elif summary['total_weight_change'] < 0 %}text-cyan{% else %}text-muted{% endif %}">
+        {% if summary['total_weight_change'] > 0 %}
+          ▲ +{{ summary['total_weight_change'] }} kg hypertrophy net
+        {% elif summary['total_weight_change'] < 0 %}
+          ▼ {{ summary['total_weight_change'] }} kg fat loss delta
+        {% else %}
+          Maintained baseline
+        {% endif %}
+      </span>
+    </div>
+    <div class="stat-icon green">
+      <svg viewBox="0 0 24 24"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"></polyline><polyline points="17 6 23 6 23 12"></polyline></svg>
+    </div>
+  </div>
+
+  <!-- 4. Workout Completion Percentage -->
+  <div class="stat-card">
+    <div class="stat-info">
+      <span class="stat-label">Workout Completion</span>
+      <span class="stat-value">{{ summary['overall_completion_pct'] }} <span class="text-sm font-semibold text-muted">%</span></span>
+      <span class="stat-sub text-amber">
+        {{ summary['total_completed_workouts'] }} completed / {{ summary['total_logged_workouts'] }} total
+      </span>
+    </div>
+    <div class="stat-icon cyan">
+      <svg viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+    </div>
+  </div>
+
+</div>
+
+<!-- Milestone Progress Bar Banner -->
+<div class="card" style="margin-bottom: 2rem;">
+  <div class="card-header">
+    <h2 class="card-title">
+      <svg viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+      Hypertrophy Goal Milestone Progression
+    </h2>
+    <span class="badge badge-primary">Target: {{ summary['target_weight'] }} kg</span>
+  </div>
+
+  <div class="progress-container" style="margin: 0.75rem 0 0.5rem;">
+    <div class="progress-meta">
+      <span class="progress-label">Transformation Milestone ({{ summary['starting_weight'] }} kg &rarr; {{ summary['target_weight'] }} kg)</span>
+      <span class="progress-number font-bold text-gradient">{{ summary['milestone_pct'] }}% Completed</span>
+    </div>
+    <div class="progress-bar-bg" style="height: 14px;">
+      <div class="progress-bar-fill primary" style="width: {{ summary['milestone_pct'] }}%;"></div>
+    </div>
+  </div>
+  <div style="display: flex; justify-content: space-between; font-size: 0.78rem;" class="text-dim">
+    <span>Starting: {{ summary['starting_weight'] }} kg</span>
+    <span class="font-bold text-main">Current: {{ summary['current_weight'] }} kg</span>
+    <span>Target Goal: {{ summary['target_weight'] }} kg</span>
+  </div>
+</div>
+
+<!-- ================= PROGRESS CHARTS ================= -->
+<div style="margin-bottom: 2rem;">
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 0.5rem;">
+    <div>
+      <h2 class="text-xl font-bold" style="color: var(--text-heading);">Progression Analytics</h2>
+      <p class="text-xs text-muted">Visual charts tracking weight, muscle circumference measurements, and training consistency.</p>
+    </div>
+    <span class="badge badge-neutral">Auto-Rendered with Chart.js</span>
+  </div>
+
+  <div class="grid-2" style="margin-bottom: 1.5rem;">
+    
+    <!-- 1. Weight Progression Chart -->
+    <div class="card" style="padding: 1.25rem;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+        <div>
+          <h3 class="text-base font-bold" style="color: var(--text-heading);">⚖️ Weight Progression</h3>
+          <p class="text-xs text-muted">Scale weight (kg) over time</p>
+        </div>
+        <span class="badge badge-primary">{{ summary['current_weight'] }} kg</span>
+      </div>
+      <div style="position: relative; height: 260px; width: 100%;">
+        <div id="weightChartSkeleton" class="skeleton skeleton-rect" style="position: absolute; inset: 0; height: 100%; border-radius: var(--radius-sm); display: flex; align-items: center; justify-content: center; z-index: 1; transition: opacity 0.25s ease;">
+          <div style="display: flex; flex-direction: column; align-items: center; gap: 0.4rem; opacity: 0.75;">
+            <div style="width: 20px; height: 20px; border: 2px solid var(--primary); border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite;"></div>
+            <span class="text-xs text-muted font-bold" style="font-size: 0.7rem; letter-spacing: 0.04em;">LOADING SCALE TRAJECTORY...</span>
+          </div>
+        </div>
+        <canvas id="weightChart" style="position: relative; z-index: 2;"></canvas>
+      </div>
+    </div>
+
+    <!-- 2. Workout Consistency Chart -->
+    <div class="card" style="padding: 1.25rem;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+        <div>
+          <h3 class="text-base font-bold" style="color: var(--text-heading);">🔥 Workout Consistency</h3>
+          <p class="text-xs text-muted">Weekly adherence % against active plan</p>
+        </div>
+        <span class="badge badge-green">{{ summary['overall_completion_pct'] }}% Avg</span>
+      </div>
+      <div style="position: relative; height: 260px; width: 100%;">
+        <div id="consistencyChartSkeleton" class="skeleton skeleton-rect" style="position: absolute; inset: 0; height: 100%; border-radius: var(--radius-sm); display: flex; align-items: center; justify-content: center; z-index: 1; transition: opacity 0.25s ease;">
+          <div style="display: flex; flex-direction: column; align-items: center; gap: 0.4rem; opacity: 0.75;">
+            <div style="width: 20px; height: 20px; border: 2px solid var(--accent-green); border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite;"></div>
+            <span class="text-xs text-muted font-bold" style="font-size: 0.7rem; letter-spacing: 0.04em;">LOADING ADHERENCE...</span>
+          </div>
+        </div>
+        <canvas id="consistencyChart" style="position: relative; z-index: 2;"></canvas>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Circumferential Progression Charts: Chest, Waist, Arms, Thighs -->
+  <div class="grid-2">
+    
+    <!-- 3. Chest & Waist Progression -->
+    <div class="card" style="padding: 1.25rem;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+        <div>
+          <h3 class="text-base font-bold" style="color: var(--text-heading);">📐 Torso Progression (Chest &amp; Waist)</h3>
+          <p class="text-xs text-muted">V-taper ratio: Upper torso vs. midsection waist (cm)</p>
+        </div>
+        <div style="display: flex; gap: 0.35rem;">
+          <span class="badge badge-green">Chest: {{ summary['current_chest'] or '--' }} cm</span>
+          <span class="badge badge-amber">Waist: {{ summary['current_waist'] or '--' }} cm</span>
+        </div>
+      </div>
+      <div style="position: relative; height: 260px; width: 100%;">
+        <div id="torsoChartSkeleton" class="skeleton skeleton-rect" style="position: absolute; inset: 0; height: 100%; border-radius: var(--radius-sm); display: flex; align-items: center; justify-content: center; z-index: 1; transition: opacity 0.25s ease;">
+          <div style="display: flex; flex-direction: column; align-items: center; gap: 0.4rem; opacity: 0.75;">
+            <div style="width: 20px; height: 20px; border: 2px solid var(--accent-green); border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite;"></div>
+            <span class="text-xs text-muted font-bold" style="font-size: 0.7rem; letter-spacing: 0.04em;">LOADING TORSO METRICS...</span>
+          </div>
+        </div>
+        <canvas id="torsoChart" style="position: relative; z-index: 2;"></canvas>
+      </div>
+    </div>
+
+    <!-- 4. Arm & Thigh Progression -->
+    <div class="card" style="padding: 1.25rem;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+        <div>
+          <h3 class="text-base font-bold" style="color: var(--text-heading);">💪 Limbs Hypertrophy (Arms &amp; Thighs)</h3>
+          <p class="text-xs text-muted">Flexed biceps and quad circumference (cm)</p>
+        </div>
+        <div style="display: flex; gap: 0.35rem;">
+          <span class="badge badge-green">Arms: {{ summary['current_arm'] or '--' }} cm</span>
+          <span class="badge badge-cyan">Thighs: {{ summary['current_thigh'] or '--' }} cm</span>
+        </div>
+      </div>
+      <div style="position: relative; height: 260px; width: 100%;">
+        <div id="limbsChartSkeleton" class="skeleton skeleton-rect" style="position: absolute; inset: 0; height: 100%; border-radius: var(--radius-sm); display: flex; align-items: center; justify-content: center; z-index: 1; transition: opacity 0.25s ease;">
+          <div style="display: flex; flex-direction: column; align-items: center; gap: 0.4rem; opacity: 0.75;">
+            <div style="width: 20px; height: 20px; border: 2px solid var(--accent-cyan); border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite;"></div>
+            <span class="text-xs text-muted font-bold" style="font-size: 0.7rem; letter-spacing: 0.04em;">LOADING HYPERTROPHY METRICS...</span>
+          </div>
+        </div>
+        <canvas id="limbsChart" style="position: relative; z-index: 2;"></canvas>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- Measurement Logs History Table -->
+<div class="card">
+  <div class="card-header">
+    <h2 class="card-title">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+      Physique Measurement History
+    </h2>
+    <span class="badge badge-neutral">{{ entries|length }} Check-Ins</span>
+  </div>
+
+  {% if entries %}
+    <div class="table-responsive">
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Body Weight</th>
+            <th>Body Fat %</th>
+            <th>Chest</th>
+            <th>Waist</th>
+            <th>Arms</th>
+            <th>Thighs</th>
+            <th>Reflection Notes</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in entries %}
+            <tr>
+              <td><span class="badge badge-neutral">{{ row['date'] }}</span></td>
+              <td><strong class="text-main font-bold">{{ row['weight_kg'] }} kg</strong></td>
+              <td>{{ row['body_fat_pct'] ~ '%' if row['body_fat_pct'] else '-' }}</td>
+              <td><span class="text-green font-semibold">{{ row['chest_cm'] ~ ' cm' if row['chest_cm'] else '-' }}</span></td>
+              <td><span class="text-amber font-semibold">{{ row['waist_cm'] ~ ' cm' if row['waist_cm'] else '-' }}</span></td>
+              <td><span class="text-green font-semibold">{{ row['arms_cm'] ~ ' cm' if row['arms_cm'] else '-' }}</span></td>
+              <td><span class="text-cyan font-semibold">{{ row['thighs_cm'] ~ ' cm' if row['thighs_cm'] else '-' }}</span></td>
+              <td><span class="text-xs text-dim">{{ row['notes'] or '-' }}</span></td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <div style="text-align: center; padding: 3rem 1.5rem;">
+      <p class="text-muted">No physique measurements recorded yet.</p>
+      <button class="btn btn-primary btn-sm" data-modal-target="#logProgressModal" style="margin-top: 1rem;">
+        Log First Measurement
+      </button>
+    </div>
+  {% endif %}
+</div>
+
+<!-- Modal: Log Body Measurement Form -->
+<div class="modal-backdrop" id="logProgressModal">
+  <div class="modal-dialog">
+    <form action="{{ url_for('add_progress') }}" method="POST">
+      <div class="modal-header">
+        <h3 class="text-lg font-bold" style="color: var(--text-heading);">Log Physique Measurements</h3>
+        <button type="button" class="alert-close" data-modal-close aria-label="Close modal">&times;</button>
+      </div>
+
+      <div class="modal-body">
+        
+        <div class="grid-2">
+          <div class="form-group">
+            <label for="date" class="form-label">Check-in Date *</label>
+            <input type="date" id="date" name="date" class="form-control" value="{{ today_date }}" required>
+          </div>
+          <div class="form-group">
+            <label for="weight_kg" class="form-label">Body Weight (kg) *</label>
+            <input type="number" step="0.1" id="weight_kg" name="weight_kg" class="form-control" placeholder="78.5" value="{{ summary['current_weight'] }}" required>
+          </div>
+        </div>
+
+        <div class="grid-2">
+          <div class="form-group">
+            <label for="chest_cm" class="form-label">Chest Measurement (cm)</label>
+            <input type="number" step="0.1" id="chest_cm" name="chest_cm" class="form-control" placeholder="106.0" value="{{ summary['current_chest'] or '' }}">
+          </div>
+          <div class="form-group">
+            <label for="waist_cm" class="form-label">Waist Measurement (cm)</label>
+            <input type="number" step="0.1" id="waist_cm" name="waist_cm" class="form-control" placeholder="82.5" value="{{ summary['current_waist'] or '' }}">
+          </div>
+        </div>
+
+        <div class="grid-2">
+          <div class="form-group">
+            <label for="arms_cm" class="form-label">Arm Measurement (cm)</label>
+            <input type="number" step="0.1" id="arms_cm" name="arms_cm" class="form-control" placeholder="39.0" value="{{ summary['current_arm'] or '' }}">
+          </div>
+          <div class="form-group">
+            <label for="thighs_cm" class="form-label">Thigh Measurement (cm)</label>
+            <input type="number" step="0.1" id="thighs_cm" name="thighs_cm" class="form-control" placeholder="60.5" value="{{ summary['current_thigh'] or '' }}">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="body_fat_pct" class="form-label">Estimated Body Fat % (Optional)</label>
+          <input type="number" step="0.1" id="body_fat_pct" name="body_fat_pct" class="form-control" placeholder="14.2" value="{{ summary['current_body_fat'] or '' }}">
+        </div>
+
+        <div class="form-group">
+          <label for="notes" class="form-label">Reflection Notes</label>
+          <textarea id="notes" name="notes" rows="2" class="form-control" placeholder="Morning weigh-in condition, vascularity, hydration, energy levels..."></textarea>
+        </div>
+
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-modal-close>Cancel</button>
+        <button type="submit" class="btn btn-primary">Save Check-In</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Modal: Reset Progress Confirmation -->
+<div class="modal-backdrop" id="resetProgressModal">
+  <div class="modal-dialog" style="max-width: 480px;">
+    <div class="modal-header">
+      <div style="display: flex; align-items: center; gap: 0.6rem;">
+        <div style="width: 36px; height: 36px; border-radius: 8px; background: rgba(239, 68, 68, 0.15); color: #ef4444; display: flex; align-items: center; justify-content: center;">
+          <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path></svg>
+        </div>
+        <div>
+          <h3 class="text-base font-bold" style="color: var(--text-heading); margin: 0;">Reset progress data?</h3>
+          <p class="text-xs text-muted" style="margin: 0;">Confirmation Required</p>
+        </div>
+      </div>
+      <button type="button" class="alert-close" onclick="closeResetProgressModal()" aria-label="Close modal">&times;</button>
+    </div>
+
+    <div class="modal-body">
+      <p style="font-size: 0.95rem; color: var(--text-main); margin-bottom: 0.75rem; font-weight: 600;">
+        This will permanently remove your saved body measurements and progress records.
+      </p>
+      <div style="background: rgba(255, 255, 255, 0.04); border-left: 3px solid #ef4444; padding: 0.75rem 0.9rem; border-radius: 4px; font-size: 0.8rem; color: var(--text-muted); line-height: 1.45;">
+        ℹ️ <strong>Safety Guarantee:</strong> Your account, workouts, exercise library, and nutrition logs will NOT be affected. Only your personal measurement log entries will be cleared.
+      </div>
+    </div>
+
+    <div class="modal-footer" style="border-top: 1px solid var(--border-color); padding: 1rem 1.5rem; gap: 0.75rem;">
+      <button type="button" class="btn btn-secondary" onclick="closeResetProgressModal()">
+        Cancel
+      </button>
+      <form action="{{ url_for('reset_progress_route') }}" method="POST" style="display: inline; margin: 0;">
+        <button type="submit" class="btn btn-danger" id="btnConfirmResetProgress">
+          Reset Progress
+        </button>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+  // Setup Chart.js with dynamic fitness theme defaults
+  const themeColors = (window.getChartThemeColors) ? window.getChartThemeColors() : {
+    text: '#94a3b8',
+    grid: 'rgba(255, 255, 255, 0.05)',
+    border: 'rgba(255, 255, 255, 0.08)'
+  };
+
+  Chart.defaults.color = themeColors.text;
+  Chart.defaults.borderColor = themeColors.border;
+  Chart.defaults.font.family = "'Plus Jakarta Sans', -apple-system, sans-serif";
+
+  const chartDates = {{ charts['dates']|tojson }};
+  const weightData = {{ charts['weight']|tojson }};
+  const chestData = {{ charts['chest']|tojson }};
+  const waistData = {{ charts['waist']|tojson }};
+  const armData = {{ charts['arm']|tojson }};
+  const thighData = {{ charts['thigh']|tojson }};
+  const consistencyWeeks = {{ charts['consistency_weeks']|tojson }};
+  const consistencyRates = {{ charts['consistency_rates']|tojson }};
+
+  window.progressChartsList = [];
+
+  // 1. Weight Progression Chart
+  const ctxWeight = document.getElementById('weightChart');
+  if (ctxWeight) {
+    const chartWeight = new Chart(ctxWeight, {
+      type: 'line',
+      data: {
+        labels: chartDates,
+        datasets: [{
+          label: 'Weight (kg)',
+          data: weightData,
+          borderColor: '#ff5722',
+          backgroundColor: 'rgba(255, 87, 34, 0.15)',
+          borderWidth: 3,
+          fill: true,
+          tension: 0.35,
+          pointRadius: 4,
+          pointBackgroundColor: '#ff5722'
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false }
+        },
+        scales: {
+          y: {
+            grid: { color: themeColors.grid },
+            ticks: { color: themeColors.text }
+          },
+          x: {
+            grid: { display: false },
+            ticks: { color: themeColors.text }
+          }
+        }
+      }
+    });
+    window.progressChartsList.push(chartWeight);
+  }
+
+  // 2. Workout Consistency Chart (Bar chart)
+  const ctxConsistency = document.getElementById('consistencyChart');
+  if (ctxConsistency) {
+    const chartConsistency = new Chart(ctxConsistency, {
+      type: 'bar',
+      data: {
+        labels: consistencyWeeks,
+        datasets: [{
+          label: 'Adherence %',
+          data: consistencyRates,
+          backgroundColor: 'rgba(16, 185, 129, 0.75)',
+          borderColor: '#10b981',
+          borderWidth: 1,
+          borderRadius: 4
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false }
+        },
+        scales: {
+          y: {
+            min: 0,
+            max: 100,
+            ticks: {
+              color: themeColors.text,
+              callback: function(value) { return value + "%"; }
+            },
+            grid: { color: themeColors.grid }
+          },
+          x: {
+            grid: { display: false },
+            ticks: { color: themeColors.text }
+          }
+        }
+      }
+    });
+    window.progressChartsList.push(chartConsistency);
+  }
+
+  // 3. Torso Progression (Chest & Waist)
+  const ctxTorso = document.getElementById('torsoChart');
+  if (ctxTorso) {
+    const chartTorso = new Chart(ctxTorso, {
+      type: 'line',
+      data: {
+        labels: chartDates,
+        datasets: [
+          {
+            label: 'Chest (cm)',
+            data: chestData,
+            borderColor: '#10b981',
+            backgroundColor: 'transparent',
+            borderWidth: 2.5,
+            tension: 0.3,
+            pointRadius: 4,
+            pointBackgroundColor: '#10b981'
+          },
+          {
+            label: 'Waist (cm)',
+            data: waistData,
+            borderColor: '#f59e0b',
+            backgroundColor: 'transparent',
+            borderWidth: 2.5,
+            borderDash: [5, 5],
+            tension: 0.3,
+            pointRadius: 4,
+            pointBackgroundColor: '#f59e0b'
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            position: 'top',
+            labels: { boxWidth: 12, color: themeColors.text, font: { size: 11 } }
+          }
+        },
+        scales: {
+          y: {
+            grid: { color: themeColors.grid },
+            ticks: { color: themeColors.text }
+          },
+          x: {
+            grid: { display: false },
+            ticks: { color: themeColors.text }
+          }
+        }
+      }
+    });
+    window.progressChartsList.push(chartTorso);
+  }
+
+  // 4. Limbs Progression (Arms & Thighs)
+  const ctxLimbs = document.getElementById('limbsChart');
+  if (ctxLimbs) {
+    const chartLimbs = new Chart(ctxLimbs, {
+      type: 'line',
+      data: {
+        labels: chartDates,
+        datasets: [
+          {
+            label: 'Arms (cm)',
+            data: armData,
+            borderColor: '#10b981',
+            backgroundColor: 'transparent',
+            borderWidth: 2.5,
+            tension: 0.3,
+            pointRadius: 4,
+            pointBackgroundColor: '#10b981'
+          },
+          {
+            label: 'Thighs (cm)',
+            data: thighData,
+            borderColor: '#06b6d4',
+            backgroundColor: 'transparent',
+            borderWidth: 2.5,
+            tension: 0.3,
+            pointRadius: 4,
+            pointBackgroundColor: '#06b6d4'
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            position: 'top',
+            labels: { boxWidth: 12, color: themeColors.text, font: { size: 11 } }
+          }
+        },
+        scales: {
+          y: {
+            grid: { color: themeColors.grid },
+            ticks: { color: themeColors.text }
+          },
+          x: {
+            grid: { display: false },
+            ticks: { color: themeColors.text }
+          }
+        }
+      }
+    });
+    window.progressChartsList.push(chartLimbs);
+  }
+
+  // Dismiss progress chart skeleton loaders smoothly
+  ['weightChartSkeleton', 'consistencyChartSkeleton', 'torsoChartSkeleton', 'limbsChartSkeleton'].forEach(id => {
+    const sk = document.getElementById(id);
+    if (sk) {
+      sk.style.opacity = '0';
+      setTimeout(() => { if (sk.parentNode) sk.style.display = 'none'; }, 250);
+    }
+  });
+
+  // Live theme listener for progress charts
+  window.addEventListener('ironpulse:themechange', function() {
+    if (window.getChartThemeColors && window.progressChartsList) {
+      const colors = window.getChartThemeColors();
+      window.progressChartsList.forEach(chart => {
+        if (chart.options.scales && chart.options.scales.y) {
+          chart.options.scales.y.grid.color = colors.grid;
+          if (chart.options.scales.y.ticks) {
+            chart.options.scales.y.ticks.color = colors.text;
+          }
+        }
+        if (chart.options.scales && chart.options.scales.x && chart.options.scales.x.ticks) {
+          chart.options.scales.x.ticks.color = colors.text;
+        }
+        if (chart.options.plugins && chart.options.plugins.legend && chart.options.plugins.legend.labels) {
+          chart.options.plugins.legend.labels.color = colors.text;
+        }
+        chart.update();
+      });
+    }
+  });
+
+  // Reset Progress Modal JS Handlers
+  function openResetProgressModal() {
+    const modal = document.getElementById('resetProgressModal');
+    if (modal) {
+      modal.classList.add('active');
+      modal.classList.add('open');
+      document.body.style.overflow = 'hidden';
+    }
+  }
+
+  function closeResetProgressModal() {
+    const modal = document.getElementById('resetProgressModal');
+    if (modal) {
+      modal.classList.remove('active');
+      modal.classList.remove('open');
+      document.body.style.overflow = '';
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', function() {
+    const resetModal = document.getElementById('resetProgressModal');
+    if (resetModal) {
+      resetModal.addEventListener('click', function(e) {
+        if (e.target === resetModal) closeResetProgressModal();
+      });
+    }
+  });
+
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+      const resetModal = document.getElementById('resetProgressModal');
+      if (resetModal && resetModal.classList.contains('active')) {
+        closeResetProgressModal();
+      }
+    }
+  });
+</script>
+{% endblock %}

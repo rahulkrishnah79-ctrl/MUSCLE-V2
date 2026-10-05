@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+
+{% block title %}Sign In - IronPulse Fitness Tracker{% endblock %}
+
+{% block content %}
+<div style="max-width: 460px; margin: 3rem auto;">
+  <div class="card" style="padding: 2.25rem 2rem; border-color: rgba(255, 87, 34, 0.25);">
+    
+    <div style="text-align: center; margin-bottom: 2rem;">
+      <div style="display: inline-flex; width: 56px; height: 56px; background: rgba(255, 87, 34, 0.12); border: 1px solid rgba(255, 87, 34, 0.3); border-radius: 12px; align-items: center; justify-content: center; margin-bottom: 1rem;">
+        <svg viewBox="0 0 24 24" width="28" height="28" fill="#ff5722">
+          <path d="M6 5v14M18 5v14M2 9v6M22 9v6M6 12h12M4 7h4v10H4zM16 7h4v10h-4z"/>
+        </svg>
+      </div>
+      <h1 class="title-display" style="font-size: 1.8rem;">Welcome Back</h1>
+      <p class="text-muted text-sm" style="margin-top: 0.35rem;">Log in to access your workout splits, nutrition logs, and hypertrophy stats.</p>
+    </div>
+
+    <!-- Quick Demo Access Banner -->
+    <div style="background: rgba(16, 185, 129, 0.08); border: 1px dashed rgba(16, 185, 129, 0.35); border-radius: var(--radius-sm); padding: 1rem; margin-bottom: 1.75rem; text-align: center;">
+      <p class="text-sm font-semibold" style="color: #34d399; margin-bottom: 0.5rem;">Explore Pre-Populated Sample Data</p>
+      <a href="{{ url_for('login_demo') }}" class="btn btn-success btn-sm btn-block" style="box-shadow: 0 4px 12px rgba(16, 185, 129, 0.25);">
+        <svg viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+        Instant Demo Login (Alex Mercer)
+      </a>
+      <p class="text-dim text-xs" style="margin-top: 0.4rem;">Includes active workouts, meal logs, & weight tracking</p>
+    </div>
+
+    <!-- Google OAuth 2.0 Login Button -->
+    <div style="margin-bottom: 1.5rem;">
+      <a href="{{ url_for('auth_google') }}" class="btn btn-secondary btn-block btn-lg" style="display: flex; align-items: center; justify-content: center; gap: 0.75rem; border-color: rgba(255, 255, 255, 0.15); background: var(--bg-card-alt); font-weight: 600; text-decoration: none;">
+        <svg viewBox="0 0 24 24" width="20" height="20">
+          <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.8-2.4 3.66v3.05h3.9c2.28-2.1 3.645-5.2 3.645-9.15z"/>
+          <path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.9-3.05c-1.08.72-2.45 1.16-4.03 1.16-3.1 0-5.73-2.09-6.67-4.91H1.27v3.13C3.25 21.36 7.31 24 12 24z"/>
+          <path fill="#FBBC05" d="M5.33 14.29c-.24-.72-.38-1.49-.38-2.29s.14-1.57.38-2.29V6.58H1.27C.46 8.2 0 10.04 0 12s.46 3.8 1.27 5.42l4.06-3.13z"/>
+          <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.31 0 3.25 2.64 1.27 6.58l4.06 3.13c.94-2.82 3.57-4.96 6.67-4.96z"/>
+        </svg>
+        <span>Continue with Google</span>
+      </a>
+    </div>
+
+    <!-- Divider -->
+    <div style="display: flex; align-items: center; text-align: center; margin: 1.5rem 0; color: var(--text-dim); font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;">
+      <span style="flex: 1; border-bottom: 1px solid var(--border-color);"></span>
+      <span style="padding: 0 0.85rem;">or sign in with email</span>
+      <span style="flex: 1; border-bottom: 1px solid var(--border-color);"></span>
+    </div>
+
+    <!-- Standard Login Form -->
+    <form action="{{ url_for('login') }}" method="POST">
+      <div class="form-group">
+        <label for="username" class="form-label">Username or Email</label>
+        <input type="text" id="username" name="username" class="form-control" placeholder="e.g. alex_pulse or alex@ironpulse.fit" required autofocus>
+      </div>
+
+      <div class="form-group">
+        <div style="display: flex; justify-content: space-between; margin-bottom: 0.45rem;">
+          <label for="password" class="form-label" style="margin-bottom: 0;">Password</label>
+          <span class="text-xs text-dim">Demo: fitness123</span>
+        </div>
+        <input type="password" id="password" name="password" class="form-control" placeholder="••••••••" required>
+      </div>
+
+      <button type="submit" class="btn btn-primary btn-block btn-lg" style="margin-top: 1.25rem;" data-loading-text="Authenticating...">
+        Sign In to IronPulse
+      </button>
+    </form>
+
+    <div style="text-align: center; margin-top: 1.75rem; padding-top: 1.25rem; border-top: 1px solid var(--border-color);">
+      <p class="text-sm text-muted">
+        Don't have an athlete account? 
+        <a href="{{ url_for('register') }}" class="font-bold text-gradient">Create one now</a>
+      </p>
+    </div>
+
+  </div>
+</div>
+{% endblock %}

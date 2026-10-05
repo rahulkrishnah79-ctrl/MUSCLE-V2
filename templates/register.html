@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+
+{% block title %}Create Account - IronPulse Fitness Tracker{% endblock %}
+
+{% block content %}
+<div style="max-width: 520px; margin: 2rem auto;">
+  <div class="card" style="padding: 2.25rem 2rem; border-color: rgba(255, 87, 34, 0.25);">
+    
+    <div style="text-align: center; margin-bottom: 2rem;">
+      <h1 class="title-display" style="font-size: 1.8rem;">Start Your Transformation</h1>
+      <p class="text-muted text-sm" style="margin-top: 0.35rem;">Track training volume, progressive overload, and macro distribution.</p>
+    </div>
+    <!-- Google OAuth 2.0 Registration Button -->
+    <div style="margin-bottom: 1.5rem;">
+      <a href="{{ url_for('auth_google') }}" class="btn btn-secondary btn-block btn-lg" style="display: flex; align-items: center; justify-content: center; gap: 0.75rem; border-color: rgba(255, 255, 255, 0.15); background: var(--bg-card-alt); font-weight: 600; text-decoration: none;">
+        <svg viewBox="0 0 24 24" width="20" height="20">
+          <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.8-2.4 3.66v3.05h3.9c2.28-2.1 3.645-5.2 3.645-9.15z"/>
+          <path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.9-3.05c-1.08.72-2.45 1.16-4.03 1.16-3.1 0-5.73-2.09-6.67-4.91H1.27v3.13C3.25 21.36 7.31 24 12 24z"/>
+          <path fill="#FBBC05" d="M5.33 14.29c-.24-.72-.38-1.49-.38-2.29s.14-1.57.38-2.29V6.58H1.27C.46 8.2 0 10.04 0 12s.46 3.8 1.27 5.42l4.06-3.13z"/>
+          <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.31 0 3.25 2.64 1.27 6.58l4.06 3.13c.94-2.82 3.57-4.96 6.67-4.96z"/>
+        </svg>
+        <span>Continue with Google</span>
+      </a>
+    </div>
+
+    <!-- Divider -->
+    <div style="display: flex; align-items: center; text-align: center; margin: 1.5rem 0; color: var(--text-dim); font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;">
+      <span style="flex: 1; border-bottom: 1px solid var(--border-color);"></span>
+      <span style="padding: 0 0.85rem;">or register with email</span>
+      <span style="flex: 1; border-bottom: 1px solid var(--border-color);"></span>
+    </div>
+
+    <form action="{{ url_for('register') }}" method="POST">
+      
+      <div class="form-group">
+        <label for="full_name" class="form-label">Full Name</label>
+        <input type="text" id="full_name" name="full_name" class="form-control" placeholder="e.g. Chris Bumstead" required>
+      </div>
+
+      <div class="grid-2">
+        <div class="form-group">
+          <label for="username" class="form-label">Username <span class="text-xs text-dim">(Optional)</span></label>
+          <input type="text" id="username" name="username" class="form-control" placeholder="Auto-generated if blank">
+        </div>
+        <div class="form-group">
+          <label for="email" class="form-label">Email Address *</label>
+          <input type="email" id="email" name="email" class="form-control" placeholder="e.g. athlete@fit.com" required>
+        </div>
+      </div>
+
+      <div class="grid-2">
+        <div class="form-group">
+          <label for="password" class="form-label">Password</label>
+          <input type="password" id="password" name="password" class="form-control" placeholder="Min 6 characters" required>
+        </div>
+        <div class="form-group">
+          <label for="confirm_password" class="form-label">Confirm Password</label>
+          <input type="password" id="confirm_password" name="confirm_password" class="form-control" placeholder="Repeat password" required>
+        </div>
+      </div>
+
+      <div class="grid-2">
+        <div class="form-group">
+          <label for="fitness_goal" class="form-label">Primary Fitness Goal</label>
+          <select id="fitness_goal" name="fitness_goal" class="form-control">
+            <option value="Muscle Hypertrophy & Strength" selected>Muscle Hypertrophy & Strength</option>
+            <option value="Lean Bulk">Lean Bulk & Power</option>
+            <option value="Cutting & Fat Loss">Cutting & Fat Loss</option>
+            <option value="Body Recomposition">Body Recomposition</option>
+            <option value="Endurance & Athleticism">Endurance & Athleticism</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label for="experience_level" class="form-label">Experience Level</label>
+          <select id="experience_level" name="experience_level" class="form-control">
+            <option value="Beginner (< 1 Year)">Beginner (&lt; 1 Year)</option>
+            <option value="Intermediate (1-3 Years)" selected>Intermediate (1-3 Years)</option>
+            <option value="Advanced (3+ Years)">Advanced (3+ Years)</option>
+            <option value="Elite (5+ Years)">Elite (5+ Years)</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="grid-2">
+        <div class="form-group">
+          <label for="height_cm" class="form-label">Height (cm)</label>
+          <input type="number" id="height_cm" name="height_cm" class="form-control" value="178" min="100" max="250" required>
+        </div>
+        <div class="form-group">
+          <label for="weight_kg" class="form-label">Current Weight (kg)</label>
+          <input type="number" step="0.5" id="weight_kg" name="weight_kg" class="form-control" value="75.0" min="30" max="300" required>
+        </div>
+      </div>
+
+      <button type="submit" class="btn btn-primary btn-block btn-lg" style="margin-top: 1rem;" data-loading-text="Creating Account...">
+        Create Athlete Profile
+      </button>
+
+    </form>
+
+    <div style="text-align: center; margin-top: 1.75rem; padding-top: 1.25rem; border-top: 1px solid var(--border-color);">
+      <p class="text-sm text-muted">
+        Already registered with IronPulse? 
+        <a href="{{ url_for('login') }}" class="font-bold text-gradient">Log in here</a>
+      </p>
+    </div>
+
+  </div>
+</div>
+{% endblock %}

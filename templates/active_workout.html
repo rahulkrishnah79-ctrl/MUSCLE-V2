@@ -1,0 +1,536 @@
+{% extends "base.html" %}
+
+{% block title %}Active Training Session - IronPulse{% endblock %}
+
+{% block extra_head %}
+<style>
+  .active-exercise-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    padding: 1.25rem;
+    transition: var(--transition);
+    position: relative;
+  }
+  .active-exercise-card.completed {
+    border-color: rgba(16, 185, 129, 0.4);
+    background: rgba(16, 185, 129, 0.04);
+  }
+  .rest-timer-box {
+    background: var(--bg-card-alt);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    padding: 1rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+  }
+  .timer-display {
+    font-size: 2rem;
+    font-weight: 800;
+    font-family: monospace;
+    color: #38bdf8;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Active Workout Header -->
+<div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 1rem;">
+  <div>
+    <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.25rem;">
+      <span class="badge badge-amber">⚡ Active Session In Progress</span>
+      <span class="badge badge-neutral">{{ workout['target_muscle_group'] }}</span>
+      <span class="badge badge-neutral">{{ workout['date'] }}</span>
+    </div>
+    <h1 class="title-display" style="font-size: 2rem;">{{ workout['title'] }}</h1>
+    <p class="text-muted text-sm">Focus on mind-muscle connection, eccentric control, and progressive overload.</p>
+  </div>
+
+  <div style="display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;">
+    <!-- Active Elapsed Timer -->
+    <div style="background: var(--bg-card-alt); border: 1px solid var(--border-color); padding: 0.5rem 1rem; border-radius: var(--radius-sm); text-align: center;">
+      <span class="text-xs text-muted font-bold" style="text-transform: uppercase;">Elapsed Time</span>
+      <div id="sessionStopwatch" style="font-size: 1.3rem; font-weight: 800; color: #ffffff; font-family: monospace;">00:00</div>
+    </div>
+    <button type="button" class="btn btn-secondary btn-lg" onclick="openAddExerciseModal({{ workout['id'] }})">
+      <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+      + Add Exercise
+    </button>
+    <button class="btn btn-success btn-lg" data-modal-target="#finishWorkoutModal">
+      <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"></polyline></svg>
+      Finish Workout
+    </button>
+  </div>
+</div>
+
+<!-- Progress Meter Card -->
+<div class="card" style="margin-bottom: 1.5rem;">
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+    <div>
+      <span class="text-sm font-bold text-main">Workout Progression</span>
+      <span class="text-xs text-muted" style="margin-left: 0.5rem;">
+        <span id="completedCounter">{{ completed_exercises }}</span> of {{ total_exercises }} exercises logged
+      </span>
+    </div>
+    <span class="badge badge-green" id="completionRateBadge">{{ completion_rate }}% Completed</span>
+  </div>
+  <div class="progress-bar-bg" style="height: 12px;">
+    <div class="progress-bar-fill green" id="completionProgressBar" style="width: {{ completion_rate }}%;"></div>
+  </div>
+</div>
+
+<!-- Interactive Rest Timer Widget -->
+<div class="rest-timer-box" style="margin-bottom: 2rem;">
+  <div style="display: flex; align-items: center; gap: 0.75rem;">
+    <div style="width: 40px; height: 40px; border-radius: 8px; background: rgba(6, 182, 212, 0.15); display: flex; align-items: center; justify-content: center; color: var(--accent-cyan);">
+      <svg viewBox="0 0 24 24" width="22" height="22" stroke="currentColor" stroke-width="2" fill="none"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+    </div>
+    <div>
+      <span class="text-xs font-bold text-muted" style="text-transform: uppercase;">Intra-Set Rest Timer</span>
+      <div class="timer-display" id="restTimerDisplay">01:30</div>
+    </div>
+  </div>
+
+  <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
+    <button type="button" class="btn btn-secondary btn-sm" onclick="setRestTime(60)">60s</button>
+    <button type="button" class="btn btn-secondary btn-sm" onclick="setRestTime(90)">90s</button>
+    <button type="button" class="btn btn-secondary btn-sm" onclick="setRestTime(120)">120s</button>
+    <button type="button" class="btn btn-secondary btn-sm" onclick="setRestTime(180)">180s</button>
+    <button type="button" class="btn btn-primary btn-sm" id="restTimerToggleBtn" onclick="toggleRestTimer()">Start Rest</button>
+    <button type="button" class="btn btn-secondary btn-sm" onclick="resetRestTimer()">Reset</button>
+  </div>
+</div>
+
+<!-- Exercise Execution Cards -->
+<div style="display: flex; flex-direction: column; gap: 1.25rem;">
+  {% for we in exercises %}
+    <div class="active-exercise-card {% if we['completed'] == 1 %}completed{% endif %}" id="card-we-{{ we['id'] }}">
+      
+      <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.75rem;">
+        <div>
+          <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.2rem;">
+            <span class="badge {% if we['category'] == 'Chest' %}badge-primary{% elif we['category'] == 'Back' %}badge-cyan{% elif we['category'] == 'Legs' %}badge-green{% elif we['category'] == 'Shoulders' %}badge-amber{% elif we['category'] == 'Biceps' %}badge-purple{% elif we['category'] == 'Triceps' %}badge-primary{% else %}badge-neutral{% endif %}">
+              {{ we['category'] }}
+            </span>
+            <span class="badge badge-neutral">{{ we['difficulty'] }}</span>
+            <span class="text-xs font-semibold" style="color: #38bdf8;">🎯 {{ we['target_muscle'] }}</span>
+          </div>
+          <h2 class="text-xl font-bold" style="color: #ffffff;">{{ we['exercise_name'] }}</h2>
+        </div>
+
+        <div style="display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap;">
+          {% if we['youtube_id'] %}
+            <button type="button" class="btn btn-outline btn-sm" style="padding: 0.2rem 0.55rem; color: #ff4444; border-color: rgba(255, 68, 68, 0.4);" onclick="openYouTubeModal('{{ we['youtube_id'] }}', '{{ we['exercise_name']|replace("'", "\\'") }}', '{{ we['youtube_url'] or '' }}')">
+              <svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor" style="display: inline; vertical-align: middle; margin-right: 0.25rem;"><path d="M19.615 3.184c-3.604-.246-11.631-.245-15.23 0-3.897.266-4.356 2.62-4.385 8.816.029 6.185.484 8.549 4.385 8.816 3.6.245 11.626.246 15.23 0 3.897-.266 4.356-2.62 4.385-8.816-.029-6.185-.484-8.549-4.385-8.816zm-10.615 12.816v-8l8 3.993-8 4.007z"/></svg>
+              Watch Tutorial
+            </button>
+          {% else %}
+            <span class="badge badge-neutral" style="font-size: 0.72rem; opacity: 0.65;">Tutorial unavailable</span>
+          {% endif %}
+          <button type="button" class="btn btn-sm btn-outline" onclick="triggerRestCountdown({{ we['rest_seconds'] or 90 }})">
+            ⏱ Rest {{ we['rest_seconds'] or 90 }}s
+          </button>
+          <!-- Reorder Up -->
+          <form action="{{ url_for('reorder_exercise', we_id=we['id']) }}" method="POST" style="display: inline;">
+            <input type="hidden" name="direction" value="up">
+            <button type="submit" class="btn btn-secondary btn-sm" style="padding: 0.2rem 0.45rem;" title="Move Up" {% if loop.first %}disabled{% endif %}>▲</button>
+          </form>
+          <!-- Reorder Down -->
+          <form action="{{ url_for('reorder_exercise', we_id=we['id']) }}" method="POST" style="display: inline;">
+            <input type="hidden" name="direction" value="down">
+            <button type="submit" class="btn btn-secondary btn-sm" style="padding: 0.2rem 0.45rem;" title="Move Down" {% if loop.last %}disabled{% endif %}>▼</button>
+          </form>
+          <!-- Edit Exercise -->
+          <button type="button" class="btn btn-secondary btn-sm" style="padding: 0.2rem 0.55rem;" title="Edit Sets/Reps/Rest/Weight" onclick="openEditExerciseModal({{ we['id'] }}, '{{ we['exercise_name']|replace("'", "\\'") }}', {{ we['sets'] }}, {{ we['reps'] }}, {{ we['rest_seconds'] or 90 }}, {{ we['weight_kg'] or 0 }}, '{{ (we['notes'] or '')|replace("'", "\\'") }}')">
+            ✎
+          </button>
+          <!-- Remove Exercise -->
+          <form action="{{ url_for('delete_exercise', we_id=we['id']) }}" method="POST" style="display: inline;" onsubmit="return confirm('Remove {{ we['exercise_name'] }} from this session?');">
+            <button type="submit" class="btn btn-secondary btn-sm" style="padding: 0.2rem 0.5rem; color: #ef4444;" title="Remove Exercise">✕</button>
+          </form>
+        </div>
+      </div>
+
+      <!-- Prescribed Metrics Summary -->
+      <div style="display: flex; gap: 1.5rem; background: var(--bg-card-alt); padding: 0.65rem 1rem; border-radius: var(--radius-sm); margin-bottom: 1rem; border: 1px solid var(--border-color); flex-wrap: wrap;">
+        <span class="text-sm text-muted">Prescribed Sets: <strong class="text-main">{{ we['sets'] }} Sets</strong></span>
+        <span class="text-sm text-muted">Target Reps: <strong class="text-main">{{ we['reps'] }} Reps</strong></span>
+        <span class="text-sm text-muted">Target Rest: <strong class="text-cyan">{{ we['rest_seconds'] or 90 }}s</strong></span>
+      </div>
+
+      <!-- Exercise Form Controls: Log Weight, Reps, and Completion -->
+      <form action="{{ url_for('toggle_exercise', we_id=we['id']) }}" method="POST" class="exercise-toggle-form" data-we-id="{{ we['id'] }}" style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem; border-top: 1px solid rgba(255, 255, 255, 0.05); padding-top: 1rem;">
+        <input type="hidden" name="workout_id" value="{{ workout['id'] }}">
+        <input type="hidden" name="completed" value="{{ 0 if we['completed'] == 1 else 1 }}" id="input-completed-{{ we['id'] }}">
+
+        <div style="display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;">
+          <div style="display: flex; align-items: center; gap: 0.45rem;">
+            <label class="text-xs font-bold text-muted" for="weight-{{ we['id'] }}">Load (kg):</label>
+            <input type="number" step="0.5" id="weight-{{ we['id'] }}" name="weight_kg" class="form-control" value="{{ we['weight_kg'] or 0 }}" style="width: 90px; padding: 0.4rem 0.6rem; font-weight: 700;">
+          </div>
+          <div style="display: flex; align-items: center; gap: 0.45rem;">
+            <label class="text-xs font-bold text-muted" for="reps-{{ we['id'] }}">Actual Reps:</label>
+            <input type="number" id="reps-{{ we['id'] }}" name="reps" class="form-control" value="{{ we['reps'] or 10 }}" style="width: 80px; padding: 0.4rem 0.6rem; font-weight: 700;">
+          </div>
+        </div>
+
+        <div>
+          {% if we['completed'] == 1 %}
+            <button type="submit" class="btn btn-success" id="btn-toggle-{{ we['id'] }}">
+              <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"></polyline></svg>
+              <span>Completed</span>
+            </button>
+          {% else %}
+            <button type="submit" class="btn btn-secondary" id="btn-toggle-{{ we['id'] }}">
+              <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle></svg>
+              <span>Mark Done</span>
+            </button>
+          {% endif %}
+        </div>
+      </form>
+
+      <!-- Execution Form Cues Expandable -->
+      <div style="margin-top: 0.75rem;">
+        <details>
+          <summary class="text-xs font-semibold text-primary" style="cursor: pointer; outline: none;">
+            Execution Technique &amp; Cues &rarr;
+          </summary>
+          <p class="text-xs text-muted" style="margin-top: 0.4rem; background: rgba(0,0,0,0.2); padding: 0.6rem; border-radius: 4px; border-left: 2px solid var(--primary); line-height: 1.45;">
+            {{ we['instructions'] }}
+          </p>
+        </details>
+      </div>
+
+    </div>
+  {% endfor %}
+</div>
+
+<!-- Modal: Finish Workout Session -->
+<div class="modal-backdrop" id="finishWorkoutModal">
+  <div class="modal-dialog">
+    <form action="{{ url_for('finish_workout', workout_id=workout['id']) }}" method="POST">
+      <div class="modal-header">
+        <h3 class="text-lg font-bold" style="color: var(--text-heading);">Complete Workout Session</h3>
+        <button type="button" class="alert-close" data-modal-close aria-label="Close modal">&times;</button>
+      </div>
+
+      <div class="modal-body">
+        <p class="text-sm text-muted" style="margin-bottom: 1.25rem;">
+          Great job! Record session duration, intensity, and personal notes to finalize your workout history log.
+        </p>
+
+        <div class="grid-2">
+          <div class="form-group">
+            <label for="duration_minutes" class="form-label">Total Duration (Minutes)</label>
+            <input type="number" id="duration_minutes" name="duration_minutes" class="form-control" value="60" min="10" max="300" required>
+          </div>
+
+          <div class="form-group">
+            <label for="intensity_rating" class="form-label">Perceived Effort (RPE 1-10)</label>
+            <select id="intensity_rating" name="intensity_rating" class="form-control">
+              <option value="7">7 - Solid Effort (3 RIR)</option>
+              <option value="8" selected>8 - Hard Working (2 RIR)</option>
+              <option value="9">9 - Near Failure (1 RIR)</option>
+              <option value="10">10 - Maximum Failure / PR</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="notes" class="form-label">Session Notes &amp; Reflections</label>
+          <textarea id="notes" name="notes" rows="3" class="form-control" placeholder="Pump, muscle fatigue, PRs hit, mindset notes..."></textarea>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-modal-close>Back to Workout</button>
+        <button type="submit" class="btn btn-success btn-lg" data-loading-text="Saving Session...">Save &amp; Log Completed Workout</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Modal: Add Exercise to Session -->
+<div class="modal-backdrop" id="addExerciseModal">
+  <div class="modal-dialog">
+    <form action="{{ url_for('add_exercise') }}" method="POST">
+      <input type="hidden" name="workout_id" id="add_ex_workout_id" value="{{ workout['id'] }}">
+      <div class="modal-header">
+        <h3 class="text-lg font-bold" style="color: var(--text-heading);">Add Exercise Movement</h3>
+        <button type="button" class="alert-close" data-modal-close aria-label="Close modal">&times;</button>
+      </div>
+
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="add_ex_exercise_id" class="form-label font-bold text-main">Select Exercise Movement</label>
+          <select id="add_ex_exercise_id" name="exercise_id" class="form-control" required>
+            <option value="">-- Choose from Exercise Library --</option>
+            {% for ex in exercise_options %}
+              <option value="{{ ex['id'] }}">{{ ex['name'] }} ({{ ex['category'] }} • {{ ex['equipment'] }})</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="grid-3">
+          <div class="form-group">
+            <label for="add_ex_sets" class="form-label text-xs">Working Sets</label>
+            <input type="number" id="add_ex_sets" name="sets" class="form-control" value="3" min="1" max="20" required>
+          </div>
+          <div class="form-group">
+            <label for="add_ex_reps" class="form-label text-xs">Reps / Set</label>
+            <input type="number" id="add_ex_reps" name="reps" class="form-control" value="10" min="1" max="100" required>
+          </div>
+          <div class="form-group">
+            <label for="add_ex_weight" class="form-label text-xs">Load (kg)</label>
+            <input type="number" step="0.5" id="add_ex_weight" name="weight_kg" class="form-control" value="0" min="0">
+          </div>
+        </div>
+
+        <div class="grid-2">
+          <div class="form-group">
+            <label for="add_ex_rest" class="form-label text-xs">Rest Time (seconds)</label>
+            <input type="number" id="add_ex_rest" name="rest_seconds" class="form-control" value="90" min="15" max="600">
+          </div>
+          <div class="form-group">
+            <label for="add_ex_notes" class="form-label text-xs">Execution Notes / Cues</label>
+            <input type="text" id="add_ex_notes" name="notes" class="form-control" placeholder="e.g. Controlled eccentric">
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-modal-close>Cancel</button>
+        <button type="submit" class="btn btn-primary">Add Exercise</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Modal: Edit Exercise Parameters -->
+<div class="modal-backdrop" id="editExerciseModal">
+  <div class="modal-dialog">
+    <form id="editExerciseForm" method="POST" action="">
+      <div class="modal-header">
+        <h3 class="text-lg font-bold" style="color: var(--text-heading);">Edit Exercise Parameters</h3>
+        <button type="button" class="alert-close" data-modal-close aria-label="Close modal">&times;</button>
+      </div>
+
+      <div class="modal-body">
+        <p class="text-sm font-bold text-main" id="edit_ex_name_display" style="margin-bottom: 1rem; color: #ff5722;"></p>
+
+        <div class="grid-3">
+          <div class="form-group">
+            <label for="edit_ex_sets" class="form-label text-xs">Working Sets</label>
+            <input type="number" id="edit_ex_sets" name="sets" class="form-control" min="1" max="20" required>
+          </div>
+          <div class="form-group">
+            <label for="edit_ex_reps" class="form-label text-xs">Reps / Set</label>
+            <input type="number" id="edit_ex_reps" name="reps" class="form-control" min="1" max="100" required>
+          </div>
+          <div class="form-group">
+            <label for="edit_ex_weight" class="form-label text-xs">Load (kg)</label>
+            <input type="number" step="0.5" id="edit_ex_weight" name="weight_kg" class="form-control" min="0">
+          </div>
+        </div>
+
+        <div class="grid-2">
+          <div class="form-group">
+            <label for="edit_ex_rest" class="form-label text-xs">Rest Time (seconds)</label>
+            <input type="number" id="edit_ex_rest" name="rest_seconds" class="form-control" min="15" max="600">
+          </div>
+          <div class="form-group">
+            <label for="edit_ex_notes" class="form-label text-xs">Notes / Cues</label>
+            <input type="text" id="edit_ex_notes" name="notes" class="form-control">
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-modal-close>Cancel</button>
+        <button type="submit" class="btn btn-primary">Save Exercise</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+  // Active Elapsed Stopwatch
+  let stopwatchSeconds = 0;
+  const stopwatchEl = document.getElementById('sessionStopwatch');
+  setInterval(() => {
+    stopwatchSeconds++;
+    const mins = String(Math.floor(stopwatchSeconds / 60)).padStart(2, '0');
+    const secs = String(stopwatchSeconds % 60).padStart(2, '0');
+    if (stopwatchEl) stopwatchEl.textContent = `${mins}:${secs}`;
+  }, 1000);
+
+  // Intra-Set Rest Countdown Timer
+  let restTimeLeft = 90;
+  let restInterval = null;
+  let isRestRunning = false;
+  const restDisplay = document.getElementById('restTimerDisplay');
+  const restToggleBtn = document.getElementById('restTimerToggleBtn');
+
+  function updateRestDisplay() {
+    const mins = String(Math.floor(restTimeLeft / 60)).padStart(2, '0');
+    const secs = String(restTimeLeft % 60).padStart(2, '0');
+    if (restDisplay) restDisplay.textContent = `${mins}:${secs}`;
+  }
+
+  function setRestTime(seconds) {
+    pauseRestTimer();
+    restTimeLeft = seconds;
+    updateRestDisplay();
+  }
+
+  function triggerRestCountdown(seconds) {
+    setRestTime(seconds);
+    startRestTimer();
+  }
+
+  function toggleRestTimer() {
+    if (isRestRunning) {
+      pauseRestTimer();
+    } else {
+      startRestTimer();
+    }
+  }
+
+  function startRestTimer() {
+    if (isRestRunning) return;
+    isRestRunning = true;
+    if (restToggleBtn) {
+      restToggleBtn.textContent = 'Pause';
+      restToggleBtn.classList.replace('btn-primary', 'btn-secondary');
+    }
+    restInterval = setInterval(() => {
+      if (restTimeLeft > 0) {
+        restTimeLeft--;
+        updateRestDisplay();
+      } else {
+        pauseRestTimer();
+        alert('⏱ Rest time is up! Ready for your next set.');
+      }
+    }, 1000);
+  }
+
+  function pauseRestTimer() {
+    isRestRunning = false;
+    clearInterval(restInterval);
+    if (restToggleBtn) {
+      restToggleBtn.textContent = 'Start Rest';
+      restToggleBtn.classList.replace('btn-secondary', 'btn-primary');
+    }
+  }
+
+  function resetRestTimer() {
+    pauseRestTimer();
+    restTimeLeft = 90;
+    updateRestDisplay();
+  }
+
+  // Modals for adding/editing exercises
+  function openAddExerciseModal(workoutId) {
+    document.getElementById('add_ex_workout_id').value = workoutId;
+    const modal = document.getElementById('addExerciseModal');
+    if (modal) modal.classList.add('active');
+  }
+
+  function openEditExerciseModal(weId, exName, sets, reps, rest, weight, notes) {
+    const form = document.getElementById('editExerciseForm');
+    form.action = `/workouts/exercise/edit/${weId}`;
+    document.getElementById('edit_ex_name_display').textContent = `Editing: ${exName}`;
+    document.getElementById('edit_ex_sets').value = sets || 3;
+    document.getElementById('edit_ex_reps').value = reps || 10;
+    document.getElementById('edit_ex_rest').value = rest || 90;
+    document.getElementById('edit_ex_weight').value = weight || 0;
+    document.getElementById('edit_ex_notes').value = notes || '';
+    const modal = document.getElementById('editExerciseModal');
+    if (modal) modal.classList.add('active');
+  }
+
+  // YouTube Video Modal Controller
+  function openYouTubeModal(videoId, title, fullUrl) {
+    if (!videoId) return;
+    const modal = document.getElementById('youtubeVideoModal');
+    const iframe = document.getElementById('youtubeIframe');
+    const titleEl = document.getElementById('youtubeModalTitle');
+    const extLink = document.getElementById('youtubeExternalLink');
+
+    if (titleEl) titleEl.textContent = title + ' - Tutorial';
+    if (extLink) extLink.href = fullUrl || `https://www.youtube.com/watch?v=${videoId}`;
+    if (iframe) {
+      iframe.src = `https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1&rel=0`;
+    }
+    if (modal) {
+      modal.classList.add('active');
+      modal.classList.add('open');
+      document.body.style.overflow = 'hidden';
+    }
+  }
+
+  function closeYouTubeModal() {
+    const modal = document.getElementById('youtubeVideoModal');
+    const iframe = document.getElementById('youtubeIframe');
+    if (iframe) {
+      iframe.src = '';
+    }
+    if (modal) {
+      modal.classList.remove('active');
+      modal.classList.remove('open');
+      document.body.style.overflow = '';
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', function() {
+    const ytModal = document.getElementById('youtubeVideoModal');
+    if (ytModal) {
+      ytModal.addEventListener('click', function(e) {
+        if (e.target === ytModal) {
+          closeYouTubeModal();
+        }
+      });
+    }
+  });
+</script>
+
+<!-- ================= MODAL: YOUTUBE VIDEO TUTORIAL ================= -->
+<div class="modal-backdrop" id="youtubeVideoModal">
+  <div class="modal-dialog" style="max-width: 740px;">
+    <div class="modal-header">
+      <div style="display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap;">
+        <span class="badge badge-primary">Exercise Tutorial</span>
+        <h3 class="text-base font-bold text-main" id="youtubeModalTitle">Exercise Video Tutorial</h3>
+      </div>
+      <button type="button" class="alert-close" onclick="closeYouTubeModal()" aria-label="Close modal">&times;</button>
+    </div>
+
+    <div class="modal-body" style="padding: 1.25rem;">
+      <div style="position: relative; padding-bottom: 56.25%; height: 0; overflow: hidden; border-radius: var(--radius-sm); background: #000;">
+        <iframe id="youtubeIframe" 
+                src="" 
+                title="Exercise Tutorial Player" 
+                style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: 0;"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
+                allowfullscreen></iframe>
+      </div>
+      <p class="text-xs text-muted" style="margin-top: 0.75rem; text-align: center;">
+        Evidence-based form cues &amp; technique analysis from verified fitness educators.
+      </p>
+    </div>
+
+    <div class="modal-footer" style="justify-content: space-between; flex-wrap: wrap; gap: 0.5rem;">
+      <a id="youtubeExternalLink" href="#" target="_blank" rel="noopener noreferrer" class="btn btn-outline btn-sm">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" style="display: inline; vertical-align: middle; margin-right: 0.3rem;"><path d="M19.615 3.184c-3.604-.246-11.631-.245-15.23 0-3.897.266-4.356 2.62-4.385 8.816.029 6.185.484 8.549 4.385 8.816 3.6.245 11.626.246 15.23 0 3.897-.266 4.356-2.62 4.385-8.816-.029-6.185-.484-8.549-4.385-8.816zm-10.615 12.816v-8l8 3.993-8 4.007z"/></svg>
+        Open on YouTube &rarr;
+      </a>
+      <button type="button" class="btn btn-secondary" onclick="closeYouTubeModal()">Close Video</button>
+    </div>
+  </div>
+</div>
+{% endblock %}

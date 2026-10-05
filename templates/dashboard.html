@@ -1,0 +1,1563 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - IronPulse Fitness Tracker{% endblock %}
+
+{% block content %}
+<div class="dashboard-header" style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 2rem; flex-wrap: wrap; gap: 1rem;">
+  <div>
+    <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.25rem;">
+      <span class="badge badge-primary">{{ g.user['fitness_goal'] }}</span>
+      <span class="badge badge-neutral">{{ today }}</span>
+    </div>
+    <h1 class="title-display">Welcome, {{ g.user['full_name'] }}</h1>
+    <p class="text-muted text-sm">Stay consistent. Every rep and every gram of protein builds the foundation.</p>
+  </div>
+  <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
+    <a href="{{ url_for('workouts') }}" class="btn btn-primary">
+      <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+      Log Workout
+    </a>
+    <a href="{{ url_for('nutrition') }}" class="btn btn-secondary">
+      <svg viewBox="0 0 24 24"><path d="M18 8h1a4 4 0 0 1 0 8h-1"></path><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"></path></svg>
+      Log Nutrition
+    </a>
+    <a href="{{ url_for('ai_assistant_page') }}" class="btn btn-outline" style="border-color: #ff5722; color: #ff784e;">
+      <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none"><path d="M12 2a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2 2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z"></path><path d="M4.93 4.93a2 2 0 0 1 2.83 0l1.41 1.41a2 2 0 0 1-2.83 2.83L4.93 7.76a2 2 0 0 1 0-2.83z"></path><circle cx="12" cy="12" r="4"></circle></svg>
+      Ask AI Coach
+    </a>
+  </div>
+</div>
+
+<!-- Today's Workout Feature Card -->
+<div class="card" style="margin-bottom: 2rem; border-color: rgba(255, 87, 34, 0.4); background: linear-gradient(145deg, #121824 0%, #172134 100%); box-shadow: var(--shadow-md);">
+  <div class="card-header" style="border-bottom-color: rgba(255, 87, 34, 0.2);">
+    <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
+      <span class="badge badge-primary">TODAY'S WORKOUT</span>
+      {% if todays_workout_info['status'] == 'completed' %}
+        <span class="badge badge-green">✓ Session Completed</span>
+      {% elif todays_workout_info['status'] == 'in_progress' %}
+        <span class="badge badge-amber">⚡ In Progress ({{ todays_workout_info['completion_pct'] }}%)</span>
+      {% else %}
+        <span class="badge badge-cyan">Scheduled</span>
+      {% endif %}
+      <span class="text-xs text-muted">• Focus: <strong class="text-main">{{ todays_workout_info['workout']['target_muscle_group'] if todays_workout_info.get('workout') else todays_workout_info['plan_day']['focus_category'] if todays_workout_info.get('plan_day') else 'Full Body' }}</strong></span>
+      {% if todays_workout_info.get('has_custom_schedule') %}
+        <span class="badge badge-purple" style="font-size: 0.7rem;">Custom Schedule</span>
+      {% endif %}
+    </div>
+
+    <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
+      <button type="button" class="btn btn-outline btn-sm" onclick="openEditScheduleModal()" style="border-color: rgba(255, 87, 34, 0.5); color: #ff784e;" id="btnEditTodayScheduleTop">
+        <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+        Edit Schedule
+      </button>
+      <button type="button" class="btn btn-outline btn-sm" onclick="openResetWorkoutModal()" style="border-color: rgba(239, 68, 68, 0.4); color: #ef4444;" title="Reset today's workout to default schedule">
+        <svg viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none" style="vertical-align: middle; margin-right: 3px;"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path></svg>
+        Reset Workout
+      </button>
+
+      {% if todays_workout_info['status'] == 'in_progress' and todays_workout_info.get('workout') %}
+        <a href="{{ url_for('active_workout', workout_id=todays_workout_info['workout']['id']) }}" class="btn btn-primary btn-sm">
+          Resume Workout &rarr;
+        </a>
+        <form action="{{ url_for('complete_workout', workout_id=todays_workout_info['workout']['id']) }}" method="POST" style="display: inline; margin: 0;">
+          <button type="submit" class="btn btn-success btn-sm">
+            ✓ Mark Completed
+          </button>
+        </form>
+        <a href="{{ url_for('workouts') }}" class="btn btn-secondary btn-sm">
+          Manage
+        </a>
+      {% elif todays_workout_info['status'] == 'completed' %}
+        <a href="{{ url_for('workouts') }}" class="btn btn-outline btn-sm">
+          View Summary &amp; Exercises
+        </a>
+      {% else %}
+        {% if todays_workout_info.get('workout') and todays_workout_info['workout'].get('id') %}
+          <a href="{{ url_for('active_workout', workout_id=todays_workout_info['workout']['id']) }}" class="btn btn-primary btn-sm">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" style="display: inline; vertical-align: middle;"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+            Start Workout
+          </a>
+          <form action="{{ url_for('complete_workout', workout_id=todays_workout_info['workout']['id']) }}" method="POST" style="display: inline; margin: 0;">
+            <button type="submit" class="btn btn-success btn-sm">
+              ✓ Mark Completed
+            </button>
+          </form>
+          <a href="{{ url_for('workouts') }}" class="btn btn-secondary btn-sm">
+            Manage
+          </a>
+        {% else %}
+          <form action="{{ url_for('start_workout') }}" method="POST" style="display: inline; margin: 0;">
+            <input type="hidden" name="plan_day_id" value="{{ todays_workout_info['plan_day']['id'] if todays_workout_info.get('plan_day') else '' }}">
+            <button type="submit" class="btn btn-primary btn-sm">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" style="display: inline; vertical-align: middle;"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+              Start Workout
+            </button>
+          </form>
+          <a href="{{ url_for('workouts') }}" class="btn btn-secondary btn-sm">
+            Browse Routines
+          </a>
+        {% endif %}
+      {% endif %}
+    </div>
+  </div>
+
+  <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; margin-bottom: 1.25rem;">
+    <div>
+      <h2 class="text-xl font-bold" style="color: #ffffff; margin-bottom: 0.25rem;">
+        {{ todays_workout_info['workout']['title'] if todays_workout_info.get('workout') else todays_workout_info['plan_day']['day_title'] if todays_workout_info.get('plan_day') else 'Hypertrophy Power Routine' }}
+      </h2>
+      <p class="text-xs text-muted">
+        {{ todays_workout_info['total_exercises'] }} Prescribed Exercises • Est. Duration: {{ todays_workout_info['workout']['duration_minutes'] if todays_workout_info.get('workout') else 60 }} min
+        {% if todays_workout_info.get('has_custom_schedule') %}
+          • <span class="text-green font-semibold">Customized for Today</span>
+        {% endif %}
+      </p>
+    </div>
+
+    <!-- Workout Completion Percentage Widget -->
+    <div style="min-width: 220px;">
+      <div style="display: flex; justify-content: space-between; font-size: 0.8rem; margin-bottom: 0.35rem;">
+        <span class="text-muted font-semibold">Session Completion</span>
+        <span class="font-bold text-main">{{ todays_workout_info['completion_pct'] }}%</span>
+      </div>
+      <div class="progress-bar-bg" style="height: 10px;">
+        <div class="progress-bar-fill green" style="width: {{ todays_workout_info['completion_pct'] }}%;"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Today's Workout Numbered Sequence (Requirement 10) -->
+  {% if todays_workout_info.get('exercises') %}
+    <div style="border-top: 1px solid rgba(255, 255, 255, 0.08); padding-top: 1.25rem;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.85rem;">
+        <span style="font-size: 0.8rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted);">
+          Today's Workout
+        </span>
+        <span class="text-xs text-muted">
+          {{ todays_workout_info['exercises']|length }} Exercises Scheduled
+        </span>
+      </div>
+
+      <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 0.75rem;">
+        {% for ex in todays_workout_info['exercises'] %}
+          <div style="background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; padding: 0.85rem 1rem; display: flex; align-items: flex-start; gap: 0.75rem;">
+            <div style="display: flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 6px; background: rgba(255, 87, 34, 0.15); color: #ff5722; font-weight: 700; font-size: 0.85rem; flex-shrink: 0;">
+              {{ loop.index }}
+            </div>
+            <div style="flex: 1; min-width: 0;">
+              <div style="display: flex; align-items: center; justify-content: space-between; gap: 0.5rem;">
+                <div style="font-weight: 600; font-size: 0.92rem; color: #ffffff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="{{ ex['exercise_name'] }}">
+                  {{ ex['exercise_name'] }}
+                </div>
+                {% if ex.get('completed') == 1 %}
+                  <span class="badge badge-green" style="font-size: 0.65rem; padding: 0.1rem 0.35rem;">✓ Done</span>
+                {% endif %}
+              </div>
+              <div style="display: flex; align-items: center; gap: 0.6rem; margin-top: 0.25rem; font-size: 0.82rem; color: var(--text-muted);">
+                <span style="font-weight: 700; color: #ff784e;">{{ ex['sets'] }} &times; {{ ex['reps'] }}</span>
+                <span>&bull;</span>
+                <span>Rest: {{ ex.get('rest_time') or ex.get('rest_seconds') or 90 }} sec</span>
+              </div>
+              {% if ex.get('notes') %}
+                <div style="font-size: 0.72rem; color: #94a3b8; margin-top: 0.2rem; font-style: italic; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                  {{ ex['notes'] }}
+                </div>
+              {% endif %}
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+
+      <!-- Action Buttons below Workout list (Requirement 10) -->
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 1.25rem; padding-top: 1rem; border-top: 1px solid rgba(255, 255, 255, 0.06); flex-wrap: wrap; gap: 0.75rem;">
+        <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+          <button type="button" class="btn btn-outline btn-sm" onclick="openEditScheduleModal()" style="border-color: rgba(255, 87, 34, 0.5); color: #ff784e;" id="btnEditTodayScheduleBottom">
+            <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+            Edit Schedule
+          </button>
+          <button type="button" class="btn btn-outline btn-sm" onclick="openResetWorkoutModal()" style="border-color: rgba(239, 68, 68, 0.4); color: #ef4444;" title="Reset today's custom changes and restore default schedule">
+            <svg viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none" style="vertical-align: middle; margin-right: 3px;"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path></svg>
+            Reset Workout
+          </button>
+        </div>
+
+        {% if todays_workout_info['status'] != 'completed' %}
+          {% if todays_workout_info.get('workout') and todays_workout_info['workout'].get('id') %}
+            <a href="{{ url_for('active_workout', workout_id=todays_workout_info['workout']['id']) }}" class="btn btn-primary btn-sm">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" style="display: inline; vertical-align: middle;"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+              Start Workout
+            </a>
+          {% else %}
+            <form action="{{ url_for('start_workout') }}" method="POST" style="display: inline; margin: 0;">
+              <input type="hidden" name="plan_day_id" value="{{ todays_workout_info['plan_day']['id'] if todays_workout_info.get('plan_day') else '' }}">
+              <button type="submit" class="btn btn-primary btn-sm">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" style="display: inline; vertical-align: middle;"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                Start Workout
+              </button>
+            </form>
+          {% endif %}
+        {% endif %}
+      </div>
+    </div>
+  {% else %}
+    <div style="border-top: 1px solid rgba(255, 255, 255, 0.08); padding-top: 1.25rem; text-align: center; color: var(--text-muted); font-size: 0.85rem;">
+      <p style="margin-bottom: 0.75rem;">No exercises currently scheduled for today.</p>
+      <button type="button" class="btn btn-primary btn-sm" onclick="openEditScheduleModal()">
+        + Schedule Today's Workout
+      </button>
+    </div>
+  {% endif %}
+</div>
+
+<!-- Key Stat Cards (6 columns responsive grid) -->
+<div class="grid-3" style="margin-bottom: 2rem;">
+  
+  <!-- 1. Current Weight & Target -->
+  <div class="stat-card">
+    <div class="stat-info">
+      <span class="stat-label">Current Weight</span>
+      <span class="stat-value">{{ current_weight }} <span class="text-sm font-semibold text-muted">kg</span></span>
+      <span class="stat-sub text-cyan">
+        🎯 Target: {{ target_weight }} kg
+      </span>
+    </div>
+    <div class="stat-icon primary">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 14 10"></polyline></svg>
+    </div>
+  </div>
+
+  <!-- 2. Body Mass Index (BMI) -->
+  <div class="stat-card">
+    <div class="stat-info">
+      <div style="display: flex; align-items: center; gap: 0.35rem;">
+        <span class="stat-label">Body Mass Index</span>
+        <span class="badge {{ bmi_badge_class }}" style="font-size: 0.65rem; padding: 0.15rem 0.4rem;">{{ bmi_status }}</span>
+      </div>
+      <span class="stat-value">{{ bmi }} <span class="text-sm font-semibold text-muted">kg/m²</span></span>
+      <span class="stat-sub text-muted">
+        Height: {{ g.user['height_cm'] }} cm
+      </span>
+    </div>
+    <div class="stat-icon green">
+      <svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="8.5" cy="7" r="4"></circle><polyline points="17 11 19 13 23 9"></polyline></svg>
+    </div>
+  </div>
+
+  <!-- 3. Workout Streak -->
+  <div class="stat-card">
+    <div class="stat-info">
+      <span class="stat-label">Workout Streak</span>
+      <span class="stat-value">{{ workout_stats['streak'] }} <span class="text-sm font-semibold text-muted">Days</span></span>
+      <span class="stat-sub text-amber">
+        🔥 Active consistency
+      </span>
+    </div>
+    <div class="stat-icon purple">
+      <svg viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
+    </div>
+  </div>
+
+  <!-- 4. Weekly Workout Completion -->
+  <div class="stat-card">
+    <div class="stat-info">
+      <span class="stat-label">Weekly Completion</span>
+      <span class="stat-value">{{ workout_stats['weekly_count'] }} <span class="text-sm font-semibold text-muted">/ {{ workout_stats['weekly_target'] }}</span></span>
+      <span class="stat-sub text-green">
+        <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"></polyline></svg>
+        {{ workout_stats['weekly_pct'] }}% of weekly goal
+      </span>
+    </div>
+    <div class="stat-icon primary">
+      <svg viewBox="0 0 24 24"><path d="M6 4v16M18 4v16M2 8v8M22 8v8M6 12h12"/></svg>
+    </div>
+  </div>
+
+  <!-- 5. Today's Caloric & Protein Fulfillment -->
+  <div class="stat-card">
+    <div class="stat-info">
+      <span class="stat-label">Today's Nutrition</span>
+      <span class="stat-value">{{ nutrition_today['total_calories'] }} <span class="text-sm font-semibold text-muted">/ {{ cal_target }} kcal</span></span>
+      <span class="stat-sub text-green">
+        ⚡ {{ nutrition_today['total_protein']|round(1) }}g / {{ protein_target }}g Protein
+      </span>
+    </div>
+    <div class="stat-icon cyan">
+      <svg viewBox="0 0 24 24"><path d="M18 8h1a4 4 0 0 1 0 8h-1"></path><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"></path></svg>
+    </div>
+  </div>
+
+  <!-- 6. Total Cumulative Volume -->
+  <div class="stat-card">
+    <div class="stat-info">
+      <span class="stat-label">Total Volume Lifted</span>
+      <span class="stat-value">{{ "{:,.0f}".format(workout_stats['total_volume']) }} <span class="text-sm font-semibold text-muted">kg</span></span>
+      <span class="stat-sub text-cyan">
+        ⚡ Cumulative training load
+      </span>
+    </div>
+    <div class="stat-icon amber">
+      <svg viewBox="0 0 24 24"><line x1="12" y1="1" x2="12" y2="23"></line><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
+    </div>
+  </div>
+
+</div>
+
+<!-- Main Layout: 2 Columns -->
+<div class="grid-sidebar">
+  
+  <!-- Left Main Content -->
+  <div style="display: flex; flex-direction: column; gap: 1.5rem;">
+
+    <!-- Daily Macronutrient Target Card -->
+    <div class="card">
+      <div class="card-header">
+        <h2 class="card-title">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><path d="M12 2a10 10 0 0 1 10 10"></path></svg>
+          Daily Macronutrient Target &amp; Fulfillment
+        </h2>
+        <a href="{{ url_for('nutrition') }}" class="btn btn-outline btn-sm">Full Tracker</a>
+      </div>
+
+      <div class="grid-2" style="margin-bottom: 1.25rem;">
+        
+        <!-- Calories -->
+        <div class="progress-container">
+          <div class="progress-meta">
+            <span class="progress-label">🔥 Calories</span>
+            <span class="progress-number">{{ nutrition_today['total_calories'] }} / {{ cal_target }} kcal ({{ cal_pct }}%)</span>
+          </div>
+          <div class="progress-bar-bg">
+            <div class="progress-bar-fill primary" style="width: {{ cal_pct }}%;"></div>
+          </div>
+          <div style="display: flex; justify-content: space-between; margin-top: 0.35rem; font-size: 0.72rem;">
+            <span class="text-dim">Consumed: {{ nutrition_today['total_calories'] }} kcal</span>
+            <span class="{% if remaining_calories >= 0 %}text-primary font-bold{% else %}text-amber font-bold{% endif %}">
+              {% if remaining_calories >= 0 %}{{ remaining_calories }} kcal remaining{% else %}+{{ -remaining_calories }} kcal surplus{% endif %}
+            </span>
+          </div>
+        </div>
+
+        <!-- Protein (Crucial for Muscle Building) -->
+        <div class="progress-container">
+          <div class="progress-meta">
+            <span class="progress-label" style="color: #34d399;">⚡ Protein (Muscle Synthesis)</span>
+            <span class="progress-number">{{ nutrition_today['total_protein']|round(1) }} / {{ protein_target }}g ({{ protein_pct }}%)</span>
+          </div>
+          <div class="progress-bar-bg">
+            <div class="progress-bar-fill green" style="width: {{ protein_pct }}%;"></div>
+          </div>
+          <div style="display: flex; justify-content: space-between; margin-top: 0.35rem; font-size: 0.72rem;">
+            <span class="text-dim">Consumed: {{ nutrition_today['total_protein']|round(1) }}g</span>
+            <span class="{% if remaining_protein >= 0 %}text-green font-bold{% else %}text-green font-bold{% endif %}">
+              {% if remaining_protein > 0 %}{{ remaining_protein }}g remaining{% else %}Target Reached ✓{% endif %}
+            </span>
+          </div>
+        </div>
+
+        <!-- Carbohydrates -->
+        <div class="progress-container">
+          <div class="progress-meta">
+            <span class="progress-label" style="color: #38bdf8;">⚡ Carbohydrates (Glycogen)</span>
+            <span class="progress-number">{{ nutrition_today['total_carbs']|round(1) }} / {{ carbs_target }}g ({{ carbs_pct }}%)</span>
+          </div>
+          <div class="progress-bar-bg">
+            <div class="progress-bar-fill cyan" style="width: {{ carbs_pct }}%;"></div>
+          </div>
+        </div>
+
+        <!-- Dietary Fats -->
+        <div class="progress-container">
+          <div class="progress-meta">
+            <span class="progress-label" style="color: #fbbf24;">🥑 Dietary Fats (Hormones)</span>
+            <span class="progress-number">{{ nutrition_today['total_fats']|round(1) }} / {{ fats_target }}g ({{ fats_pct }}%)</span>
+          </div>
+          <div class="progress-bar-bg">
+            <div class="progress-bar-fill amber" style="width: {{ fats_pct }}%;"></div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Logged Meals Quick Preview -->
+      <div>
+        <p class="text-xs text-muted font-bold" style="text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.75rem;">Meals Logged Today ({{ today_meals|length }})</p>
+        {% if today_meals %}
+          <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+            {% for meal in today_meals %}
+              <div style="display: flex; align-items: center; justify-content: space-between; background: var(--bg-card-alt); border: 1px solid var(--border-color); padding: 0.65rem 0.9rem; border-radius: var(--radius-sm);">
+                <div>
+                  <span class="badge badge-primary" style="margin-right: 0.5rem; font-size: 0.68rem;">{{ meal['meal_type'] }}</span>
+                  <span class="text-sm font-semibold">{{ meal['food_name'] }}</span>
+                </div>
+                <div class="text-sm" style="display: flex; gap: 1rem;">
+                  <span class="font-bold text-main">{{ meal['calories'] }} kcal</span>
+                  <span class="text-muted text-xs" style="align-self: center;">P: {{ meal['protein_g'] }}g</span>
+                </div>
+              </div>
+            {% endfor %}
+          </div>
+        {% else %}
+          <p class="text-sm text-dim">No meals logged for today yet. Fuel your training with quality nutrients!</p>
+        {% endif %}
+      </div>
+
+    </div>
+
+    <!-- Recent Workouts Card -->
+    <div class="card">
+      <div class="card-header">
+        <h2 class="card-title">
+          <svg viewBox="0 0 24 24"><path d="M6 4v16M18 4v16M2 8v8M22 8v8M6 12h12"/></svg>
+          Recent Training Sessions
+        </h2>
+        <a href="{{ url_for('workouts') }}" class="btn btn-outline btn-sm">All Workouts</a>
+      </div>
+
+      {% if recent_workouts %}
+        <div style="display: flex; flex-direction: column; gap: 0.85rem;">
+          {% for w in recent_workouts %}
+            <div style="background: var(--bg-card-alt); border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 1rem; transition: var(--transition);">
+              <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.4rem;">
+                <div>
+                  <h3 class="text-lg font-bold">{{ w['title'] }}</h3>
+                  <p class="text-xs text-muted" style="margin-top: 0.15rem;">{{ w['date'] }} • {{ w['duration_minutes'] }} mins</p>
+                </div>
+                <span class="badge badge-primary">Intensity: {{ w['intensity_rating'] }}/10</span>
+              </div>
+              <p class="text-sm text-dim" style="margin: 0.5rem 0;">{{ w['notes'] or 'No session notes provided.' }}</p>
+              <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid rgba(255, 255, 255, 0.05); padding-top: 0.5rem;">
+                <span class="text-xs text-muted font-semibold">Volume: <strong class="text-main">{{ "{:,.0f}".format(w['total_volume_kg']) }} kg</strong></span>
+                <a href="{{ url_for('workouts') }}" class="text-xs text-primary font-bold">View Exercises &rarr;</a>
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+      {% else %}
+        <div style="text-align: center; padding: 2rem;">
+          <p class="text-muted">No workouts recorded yet.</p>
+          <a href="{{ url_for('workouts') }}" class="btn btn-primary btn-sm" style="margin-top: 0.75rem;">Log First Workout</a>
+        </div>
+      {% endif %}
+
+    </div>
+
+    <!-- Weight Progress Chart Card -->
+    <div class="card">
+      <div class="card-header">
+        <h2 class="card-title">
+          <svg viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+          Weight Progress &amp; Hypertrophy Trajectory
+        </h2>
+        <div style="display: flex; gap: 0.5rem; align-items: center;">
+          <span class="badge badge-green">Weight Progress Chart</span>
+          <a href="{{ url_for('progress') }}" class="btn btn-outline btn-sm">Full Analytics &rarr;</a>
+        </div>
+      </div>
+
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 0.5rem;">
+        <div>
+          <span class="text-xs text-muted font-bold" style="text-transform: uppercase;">Scale Trajectory</span>
+          <div class="text-sm font-semibold" style="color: #ffffff; margin-top: 0.15rem;">
+            Baseline: <strong class="text-main">{{ progress_summary['starting_weight'] }} kg</strong> &rarr; 
+            Current: <strong class="text-green">{{ progress_summary['current_weight'] }} kg</strong>
+            <span class="badge {% if progress_summary['total_weight_change'] > 0 %}badge-green{% elif progress_summary['total_weight_change'] < 0 %}badge-cyan{% else %}badge-neutral{% endif %}" style="margin-left: 0.4rem;">
+              {% if progress_summary['total_weight_change'] > 0 %}+{{ progress_summary['total_weight_change'] }} kg{% else %}{{ progress_summary['total_weight_change'] }} kg{% endif %}
+            </span>
+          </div>
+        </div>
+        <div class="text-xs text-muted">
+          Target Goal: <strong class="text-cyan">{{ target_weight }} kg</strong>
+        </div>
+      </div>
+
+      <div style="position: relative; height: 260px; width: 100%;">
+        <div id="dashboardChartSkeleton" class="skeleton skeleton-rect" style="position: absolute; inset: 0; height: 100%; border-radius: var(--radius-sm); display: flex; align-items: center; justify-content: center; z-index: 1; transition: opacity 0.25s ease;">
+          <div style="display: flex; flex-direction: column; align-items: center; gap: 0.5rem; opacity: 0.75;">
+            <div style="width: 22px; height: 22px; border: 2px solid var(--primary); border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite;"></div>
+            <span class="text-xs text-muted font-bold" style="letter-spacing: 0.04em;">LOADING TRAJECTORY METRICS...</span>
+          </div>
+        </div>
+        <canvas id="dashboardWeightChart" style="position: relative; z-index: 2;"></canvas>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Right Sidebar -->
+  <div style="display: flex; flex-direction: column; gap: 1.5rem;">
+
+    <!-- Body Composition & Goal Progress -->
+    <div class="card">
+      <div class="card-header">
+        <h2 class="card-title">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 14 10"></polyline></svg>
+          Target Milestone
+        </h2>
+        <a href="{{ url_for('progress') }}" class="btn btn-outline btn-sm">Details</a>
+      </div>
+
+      <div style="text-align: center; padding: 0.75rem 0 1.25rem;">
+        <span class="text-xs text-muted font-bold" style="text-transform: uppercase;">Goal Weight</span>
+        <div style="font-size: 2.2rem; font-weight: 800; color: #ffffff; margin: 0.2rem 0;">
+          {{ current_weight }} <span class="text-muted text-sm font-semibold">/ {{ target_weight }} kg</span>
+        </div>
+        <p class="text-xs text-muted">Building lean tissue towards your hypertrophy target</p>
+      </div>
+
+      <div class="progress-container">
+        <div class="progress-meta">
+          <span class="progress-label">Milestone Progress</span>
+          <span class="progress-number">{{ weight_progress_pct }}%</span>
+        </div>
+        <div class="progress-bar-bg">
+          <div class="progress-bar-fill primary" style="width: {{ weight_progress_pct }}%;"></div>
+        </div>
+      </div>
+
+      <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.5rem; margin-top: 1.25rem; border-top: 1px solid var(--border-color); padding-top: 1rem;">
+        <div style="text-align: center; background: var(--bg-card-alt); padding: 0.6rem 0.5rem; border-radius: var(--radius-sm); border: 1px solid var(--border-color);">
+          <span class="text-xs text-muted">Chest</span>
+          <p class="font-bold text-main" style="font-size: 1rem; margin-top: 0.15rem;">
+            {{ latest_progress['chest_cm'] if latest_progress and latest_progress['chest_cm'] else '--' }} cm
+          </p>
+        </div>
+        <div style="text-align: center; background: var(--bg-card-alt); padding: 0.6rem 0.5rem; border-radius: var(--radius-sm); border: 1px solid var(--border-color);">
+          <span class="text-xs text-muted">Waist</span>
+          <p class="font-bold text-main" style="font-size: 1rem; margin-top: 0.15rem;">
+            {{ latest_progress['waist_cm'] if latest_progress and latest_progress['waist_cm'] else '--' }} cm
+          </p>
+        </div>
+        <div style="text-align: center; background: var(--bg-card-alt); padding: 0.6rem 0.5rem; border-radius: var(--radius-sm); border: 1px solid var(--border-color);">
+          <span class="text-xs text-muted">Arms</span>
+          <p class="font-bold text-green" style="font-size: 1rem; margin-top: 0.15rem;">
+            {{ latest_progress['arms_cm'] if latest_progress and latest_progress['arms_cm'] else '--' }} cm
+          </p>
+        </div>
+        <div style="text-align: center; background: var(--bg-card-alt); padding: 0.6rem 0.5rem; border-radius: var(--radius-sm); border: 1px solid var(--border-color);">
+          <span class="text-xs text-muted">Thighs</span>
+          <p class="font-bold text-cyan" style="font-size: 1rem; margin-top: 0.15rem;">
+            {{ latest_progress['thighs_cm'] if latest_progress and latest_progress['thighs_cm'] else '--' }} cm
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Quick AI Coach Spotlight Card -->
+    <div class="card" style="background: linear-gradient(145deg, #121824 0%, #1a1528 100%); border-color: rgba(139, 92, 246, 0.3);">
+      <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.65rem;">
+        <span class="badge badge-purple">AI Fitness Coach</span>
+        <span class="text-xs text-dim">Personalized</span>
+      </div>
+      <h3 class="text-base font-bold" style="color: #ffffff; margin-bottom: 0.35rem;">Ask Your IronPulse AI</h3>
+      <p class="text-xs text-muted" style="margin-bottom: 1rem;">
+        Get instant training routines, post-workout meals, or form adjustments customized for your {{ g.user['weight_kg'] }} kg frame and {{ g.user['fitness_goal'] }} goal.
+      </p>
+      <a href="{{ url_for('ai_assistant_page') }}" class="btn btn-primary btn-block btn-sm">
+        Open AI Chat Assistant &rarr;
+      </a>
+    </div>
+
+    <!-- Quick Exercise Inspiration Card -->
+    <div class="card" style="background: linear-gradient(145deg, #121824 0%, #172033 100%);">
+      <div style="display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.75rem;">
+        <span class="badge badge-green">Hypertrophy Tip</span>
+        <span class="text-xs text-dim">Progressive Overload</span>
+      </div>
+      <h3 class="text-lg font-bold" style="color: #ffffff; margin-bottom: 0.5rem;">Focus on Compound Movements</h3>
+      <p class="text-sm text-muted" style="margin-bottom: 1.25rem;">
+        Compound lifts recruit the maximum motor units and drive optimal hormonal and mechanical tension responses for muscle hypertrophy.
+      </p>
+      <a href="{{ url_for('exercises') }}" class="btn btn-secondary btn-block btn-sm">
+        Browse Exercise Library &rarr;
+      </a>
+    </div>
+
+    <!-- Quick Profile Summary -->
+    <div class="card">
+      <div class="card-header">
+        <h3 class="card-title text-sm">
+          <svg viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+          Athlete Profile
+        </h3>
+        <a href="{{ url_for('profile') }}" class="text-xs text-primary font-semibold">Settings</a>
+      </div>
+      <div style="font-size: 0.85rem; display: flex; flex-direction: column; gap: 0.65rem;">
+        <div style="display: flex; justify-content: space-between;">
+          <span class="text-muted">Training Tier:</span>
+          <span class="font-semibold text-main">{{ g.user['experience_level'] }}</span>
+        </div>
+        <div style="display: flex; justify-content: space-between;">
+          <span class="text-muted">Frequency:</span>
+          <span class="font-semibold text-main">{{ g.user['training_days_per_week'] }} Days / Wk</span>
+        </div>
+        <div style="display: flex; justify-content: space-between;">
+          <span class="text-muted">Diet:</span>
+          <span class="font-semibold text-green">{{ g.user['dietary_preference'] }}</span>
+        </div>
+        <div style="display: flex; justify-content: space-between;">
+          <span class="text-muted">Target Protein:</span>
+          <span class="font-semibold" style="color: #34d399;">{{ g.user['daily_protein_target'] }} g/day</span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const ctxWeight = document.getElementById('dashboardWeightChart');
+    if (!ctxWeight) return;
+
+    const chartDates = {{ progress_charts['dates']|tojson }};
+    const weightData = {{ progress_charts['weight']|tojson }};
+    const targetWeight = {{ target_weight|tojson }};
+
+    // Construct target dataset line
+    const targetData = chartDates.map(() => targetWeight);
+
+    const themeColors = (window.getChartThemeColors) ? window.getChartThemeColors() : {
+      text: '#94a3b8',
+      grid: 'rgba(255, 255, 255, 0.05)',
+      tooltipBg: '#121824',
+      tooltipTitle: '#ffffff',
+      tooltipBody: '#f1f5f9',
+      tooltipBorder: '#1e293d'
+    };
+
+    window.dashboardWeightChart = new Chart(ctxWeight, {
+      type: 'line',
+      data: {
+        labels: chartDates,
+        datasets: [
+          {
+            label: 'Body Weight (kg)',
+            data: weightData,
+            borderColor: '#ff5722',
+            backgroundColor: 'rgba(255, 87, 34, 0.12)',
+            borderWidth: 2.5,
+            fill: true,
+            tension: 0.35,
+            pointRadius: 4,
+            pointBackgroundColor: '#ff5722',
+            pointBorderColor: '#ffffff',
+            pointBorderWidth: 1
+          },
+          {
+            label: 'Goal Target (' + targetWeight + ' kg)',
+            data: targetData,
+            borderColor: '#06b6d4',
+            borderWidth: 2,
+            borderDash: [6, 6],
+            fill: false,
+            pointRadius: 0,
+            tension: 0
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            display: true,
+            position: 'top',
+            labels: {
+              boxWidth: 12,
+              color: themeColors.text,
+              font: { size: 11, family: 'Plus Jakarta Sans' }
+            }
+          },
+          tooltip: {
+            backgroundColor: themeColors.tooltipBg,
+            titleColor: themeColors.tooltipTitle,
+            bodyColor: themeColors.tooltipBody,
+            borderColor: themeColors.tooltipBorder,
+            borderWidth: 1,
+            padding: 10,
+            callbacks: {
+              label: function(context) {
+                return ' ' + context.dataset.label + ': ' + context.parsed.y + ' kg';
+              }
+            }
+          }
+        },
+        scales: {
+          y: {
+            grid: {
+              color: themeColors.grid
+            },
+            ticks: {
+              color: themeColors.text,
+              font: { size: 10, family: 'Plus Jakarta Sans' },
+              callback: function(value) { return value + ' kg'; }
+            }
+          },
+          x: {
+            grid: { display: false },
+            ticks: {
+              color: themeColors.text,
+              font: { size: 10, family: 'Plus Jakarta Sans' }
+            }
+          }
+        }
+      }
+    });
+
+    // Dismiss chart skeleton loader smoothly
+    const chartSkeleton = document.getElementById('dashboardChartSkeleton');
+    if (chartSkeleton) {
+      chartSkeleton.style.opacity = '0';
+      setTimeout(() => {
+        if (chartSkeleton.parentNode) chartSkeleton.style.display = 'none';
+      }, 250);
+    }
+
+    window.addEventListener('ironpulse:themechange', function() {
+      if (window.dashboardWeightChart && window.getChartThemeColors) {
+        const colors = window.getChartThemeColors();
+        const chart = window.dashboardWeightChart;
+        chart.options.scales.y.grid.color = colors.grid;
+        chart.options.scales.y.ticks.color = colors.text;
+        chart.options.scales.x.ticks.color = colors.text;
+        chart.options.plugins.legend.labels.color = colors.text;
+        chart.options.plugins.tooltip.backgroundColor = colors.tooltipBg;
+        chart.options.plugins.tooltip.titleColor = colors.tooltipTitle;
+        chart.options.plugins.tooltip.bodyColor = colors.tooltipBody;
+        chart.options.plugins.tooltip.borderColor = colors.tooltipBorder;
+        chart.update();
+      }
+    });
+  });
+</script>
+
+<!-- ==============================================================
+     MODAL: EDIT TODAY'S WORKOUT SCHEDULE (Requirement 1, 6, 7)
+     ============================================================== -->
+<div class="modal-backdrop" id="editTodayScheduleModal" style="z-index: 1050;">
+  <div class="modal-dialog" style="max-width: 860px; max-height: 92vh; display: flex; flex-direction: column; background: var(--bg-card); border: 1px solid var(--border-hover); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg);">
+    
+    <!-- Modal Header -->
+    <div class="modal-header" style="border-bottom: 1px solid var(--border-color); padding: 1.25rem 1.5rem;">
+      <div>
+        <div style="display: flex; align-items: center; gap: 0.6rem;">
+          <span class="badge badge-primary">Schedule Planner</span>
+          <h3 class="text-base font-bold text-main" style="margin: 0;">Edit Today's Workout Schedule</h3>
+        </div>
+        <p class="text-xs text-muted" style="margin: 0.25rem 0 0 0;">
+          Customize exercises, sets, reps, rest intervals, and routine for today (<strong class="text-main">{{ today }}</strong>)
+        </p>
+      </div>
+      <button type="button" class="alert-close" onclick="closeEditScheduleModal()" aria-label="Close modal" style="font-size: 1.5rem; line-height: 1;">&times;</button>
+    </div>
+
+    <!-- Modal Body (Scrollable) -->
+    <div class="modal-body" style="padding: 1.5rem; overflow-y: auto; flex: 1;">
+      
+      <!-- 1. Change Today's Workout (Preset Routine Switcher - Requirement 6) -->
+      <div style="background: rgba(255, 87, 34, 0.05); border: 1px solid rgba(255, 87, 34, 0.25); border-radius: var(--radius-md); padding: 1rem 1.25rem; margin-bottom: 1.25rem;">
+        <label class="form-label" style="font-weight: 700; color: #ff784e; display: flex; align-items: center; gap: 0.4rem; margin-bottom: 0.4rem;">
+          <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>
+          Change Today's Workout (Switch Routine)
+        </label>
+        <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
+          <select id="scheduleRoutineSelector" class="form-input" style="flex: 1; min-width: 260px;" onchange="applySelectedRoutine(this.value)">
+            <option value="">-- Choose a Routine from Library or Keep Custom --</option>
+            {% for r in all_plan_routines %}
+              <option value="{{ r['day_id'] }}">
+                {{ r['day_title'] }} ({{ r['plan_name'] }} • {{ r['exercise_count'] }} exercises)
+              </option>
+            {% endfor %}
+          </select>
+          <button type="button" class="btn btn-secondary btn-sm" onclick="resetToInitialSchedule()" title="Revert to initial schedule loaded today">
+            Reset
+          </button>
+        </div>
+        <p class="text-xs text-muted" style="margin: 0.4rem 0 0 0;">
+          Switching routines loads all exercises into today's schedule. You can still modify, add, remove, and reorder exercises before saving.
+        </p>
+      </div>
+
+      <!-- 2. Workout Metadata (Title, Focus, Duration, Notes) -->
+      <div class="grid-2" style="gap: 1rem; margin-bottom: 1rem;">
+        <div>
+          <label class="form-label" for="schedWorkoutTitle">Workout Title *</label>
+          <input type="text" id="schedWorkoutTitle" class="form-input" placeholder="e.g. Push Day: Chest, Delts & Triceps">
+        </div>
+        <div>
+          <label class="form-label" for="schedMuscleGroup">Target Muscle / Focus</label>
+          <select id="schedMuscleGroup" class="form-input">
+            <option value="Chest">Chest</option>
+            <option value="Back">Back</option>
+            <option value="Legs">Legs</option>
+            <option value="Shoulders">Shoulders</option>
+            <option value="Arms">Arms</option>
+            <option value="Full Body">Full Body</option>
+            <option value="Chest & Back">Chest &amp; Back</option>
+            <option value="Chest, Shoulders & Arms">Chest, Shoulders &amp; Arms</option>
+            <option value="Legs & Core">Legs &amp; Core</option>
+            <option value="Core">Core</option>
+            <option value="Push">Push</option>
+            <option value="Pull">Pull</option>
+            <option value="General">General / Full Body</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="grid-2" style="gap: 1rem; margin-bottom: 1.5rem;">
+        <div>
+          <label class="form-label" for="schedDuration">Estimated Duration (minutes)</label>
+          <input type="number" id="schedDuration" class="form-input" min="10" max="240" step="5" value="60">
+        </div>
+        <div>
+          <label class="form-label" for="schedNotes">Schedule Notes (optional)</label>
+          <input type="text" id="schedNotes" class="form-input" placeholder="e.g. Focus on strict form and full range of motion">
+        </div>
+      </div>
+
+      <!-- 3. Exercises Sequence Header -->
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.85rem; border-top: 1px solid var(--border-color); padding-top: 1.25rem; flex-wrap: wrap; gap: 0.5rem;">
+        <div>
+          <h4 style="font-size: 0.95rem; font-weight: 700; color: var(--text-main); margin: 0; display: flex; align-items: center; gap: 0.5rem;">
+            Exercises in Today's Schedule
+            <span class="badge badge-primary" id="schedExCountBadge" style="font-size: 0.75rem;">0</span>
+          </h4>
+          <span class="text-xs text-muted">Use ▲/▼ to change exercise order, edit sets/reps/rest, or replace individual exercises</span>
+        </div>
+        <button type="button" class="btn btn-primary btn-sm" onclick="openExercisePickerForAdd()" id="btnAddExerciseToSchedule">
+          <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none" style="margin-right: 4px;"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+          Add Exercise
+        </button>
+      </div>
+
+      <!-- Exercise List Container -->
+      <div id="schedExercisesContainer" style="display: flex; flex-direction: column; gap: 0.85rem;">
+        <!-- Dynamically rendered via JS -->
+      </div>
+
+      <!-- Empty State -->
+      <div id="schedEmptyState" style="display: none; text-align: center; padding: 2.5rem 1rem; border: 2px dashed var(--border-color); border-radius: var(--radius-md); color: var(--text-muted); background: rgba(255, 255, 255, 0.01);">
+        <p style="font-size: 0.95rem; margin-bottom: 0.5rem; color: var(--text-main);">No exercises in today's schedule.</p>
+        <p class="text-xs text-muted" style="margin-bottom: 1rem;">Add exercises from the library or choose a preset routine above.</p>
+        <button type="button" class="btn btn-primary btn-sm" onclick="openExercisePickerForAdd()">
+          + Add First Exercise
+        </button>
+      </div>
+
+    </div>
+
+    <!-- Modal Footer (Requirement 7) -->
+    <div class="modal-footer" style="justify-content: space-between; border-top: 1px solid var(--border-color); padding: 1.25rem 1.5rem;">
+      <button type="button" class="btn btn-secondary" onclick="closeEditScheduleModal()">
+        Cancel
+      </button>
+      <button type="button" class="btn btn-primary" id="btnSaveSchedule" onclick="saveTodaySchedule()" style="min-width: 190px;">
+        <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" style="margin-right: 6px;"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+        Save Today's Schedule
+      </button>
+    </div>
+
+  </div>
+</div>
+
+<!-- ==============================================================
+     MODAL: EXERCISE PICKER (For Add Exercise & Replace Exercise)
+     ============================================================== -->
+<div class="modal-backdrop" id="exercisePickerModal" style="z-index: 1060;">
+  <div class="modal-dialog" style="max-width: 680px; max-height: 85vh; display: flex; flex-direction: column; background: var(--bg-card); border: 1px solid var(--border-hover); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg);">
+    
+    <div class="modal-header" style="border-bottom: 1px solid var(--border-color); padding: 1.25rem 1.5rem;">
+      <div>
+        <h3 class="text-base font-bold text-main" id="pickerModalTitle" style="margin: 0;">Add Exercise to Schedule</h3>
+        <p class="text-xs text-muted" style="margin: 0.2rem 0 0 0;">Select an exercise from the library catalog</p>
+      </div>
+      <button type="button" class="alert-close" onclick="closeExercisePickerModal()" aria-label="Close modal" style="font-size: 1.5rem; line-height: 1;">&times;</button>
+    </div>
+
+    <div class="modal-body" style="padding: 1.25rem 1.5rem; overflow-y: auto; flex: 1;">
+      <!-- Search Input -->
+      <div style="margin-bottom: 0.85rem;">
+        <input type="search" id="pickerSearchInput" class="form-input" placeholder="Search exercises by name, muscle, or equipment..." oninput="filterPickerList()">
+      </div>
+
+      <!-- Muscle Filter Pills -->
+      <div style="display: flex; gap: 0.4rem; flex-wrap: wrap; margin-bottom: 1rem;" id="pickerCategoryPills">
+        <button type="button" class="badge badge-primary picker-pill" data-cat="ALL" onclick="setPickerCategory('ALL')" style="cursor: pointer; padding: 0.35rem 0.75rem;">All</button>
+        <button type="button" class="badge badge-neutral picker-pill" data-cat="Chest" onclick="setPickerCategory('Chest')" style="cursor: pointer; padding: 0.35rem 0.75rem;">Chest</button>
+        <button type="button" class="badge badge-neutral picker-pill" data-cat="Back" onclick="setPickerCategory('Back')" style="cursor: pointer; padding: 0.35rem 0.75rem;">Back</button>
+        <button type="button" class="badge badge-neutral picker-pill" data-cat="Legs" onclick="setPickerCategory('Legs')" style="cursor: pointer; padding: 0.35rem 0.75rem;">Legs</button>
+        <button type="button" class="badge badge-neutral picker-pill" data-cat="Shoulders" onclick="setPickerCategory('Shoulders')" style="cursor: pointer; padding: 0.35rem 0.75rem;">Shoulders</button>
+        <button type="button" class="badge badge-neutral picker-pill" data-cat="Arms" onclick="setPickerCategory('Arms')" style="cursor: pointer; padding: 0.35rem 0.75rem;">Arms</button>
+        <button type="button" class="badge badge-neutral picker-pill" data-cat="Core" onclick="setPickerCategory('Core')" style="cursor: pointer; padding: 0.35rem 0.75rem;">Core</button>
+      </div>
+
+      <!-- Exercise List -->
+      <div id="pickerListContainer" style="display: flex; flex-direction: column; gap: 0.6rem; max-height: 420px; overflow-y: auto;">
+        <!-- Filled via JS -->
+      </div>
+    </div>
+
+    <div class="modal-footer" style="border-top: 1px solid var(--border-color); padding: 1rem 1.5rem;">
+      <button type="button" class="btn btn-secondary" onclick="closeExercisePickerModal()">Cancel</button>
+    </div>
+
+  </div>
+</div>
+
+<!-- ==============================================================
+     MODAL: CONFIRM EXERCISE REMOVAL (Requirement 3)
+     ============================================================== -->
+<div class="modal-backdrop" id="removeExerciseConfirmModal" style="z-index: 1070;">
+  <div class="modal-dialog" style="max-width: 460px; background: var(--bg-card); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg);">
+    <div class="modal-header" style="border-bottom: 1px solid var(--border-color); padding: 1.25rem 1.5rem;">
+      <div style="display: flex; align-items: center; gap: 0.5rem;">
+        <span class="badge badge-danger">Confirm Action</span>
+        <h3 class="text-base font-bold text-main" style="margin: 0; color: #ef4444;">Remove Exercise</h3>
+      </div>
+      <button type="button" class="alert-close" onclick="closeRemoveConfirmModal()" aria-label="Close modal">&times;</button>
+    </div>
+    
+    <div class="modal-body" style="padding: 1.5rem;">
+      <p style="font-size: 1rem; color: var(--text-main); margin-bottom: 0.75rem; font-weight: 600;" id="removeConfirmQuestion">
+        Are you sure you want to remove this exercise from today's schedule?
+      </p>
+      <div style="background: rgba(255, 255, 255, 0.04); border-left: 3px solid #ff5722; padding: 0.75rem 0.9rem; border-radius: 4px; font-size: 0.8rem; color: var(--text-muted); line-height: 1.45;">
+        ℹ️ <strong>Safe Removal:</strong> This will only remove the exercise from today's workout. It will <strong>NOT</strong> delete the exercise from the global exercise library or your previous workout history.
+      </div>
+    </div>
+
+    <div class="modal-footer" style="border-top: 1px solid var(--border-color); padding: 1rem 1.5rem; gap: 0.75rem;">
+      <button type="button" class="btn btn-secondary" onclick="closeRemoveConfirmModal()">
+        Cancel
+      </button>
+      <button type="button" class="btn btn-danger" id="btnConfirmRemoveExercise" onclick="confirmExecuteRemove()">
+        Remove Workout
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ================= MODAL: RESET TODAY'S WORKOUT (Requirement 1 & 7) ================= -->
+<div class="modal-backdrop" id="resetWorkoutModal" style="z-index: 1070;">
+  <div class="modal-dialog" style="max-width: 480px; background: var(--bg-card); border: 1px solid rgba(239, 68, 68, 0.35); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg);">
+    <div class="modal-header" style="border-bottom: 1px solid var(--border-color); padding: 1.25rem 1.5rem;">
+      <div style="display: flex; align-items: center; gap: 0.5rem;">
+        <span class="badge badge-danger">Workout Reset</span>
+        <h3 class="text-base font-bold text-main" style="margin: 0; color: #ef4444;">Reset today's workout?</h3>
+      </div>
+      <button type="button" class="alert-close" onclick="closeResetWorkoutModal()" aria-label="Close modal">&times;</button>
+    </div>
+    <div class="modal-body" style="padding: 1.5rem;">
+      <p style="font-size: 0.95rem; color: var(--text-main); margin-bottom: 0.75rem; font-weight: 600;">
+        This will remove your custom changes for today's workout and restore the original workout schedule.
+      </p>
+      <div style="background: rgba(255, 255, 255, 0.04); border-left: 3px solid #ff5722; padding: 0.75rem 0.9rem; border-radius: 4px; font-size: 0.8rem; color: var(--text-muted); line-height: 1.45;">
+        ℹ️ <strong>Safety Guarantee:</strong> Your workout history, completed workouts from previous dates, and the global exercise library will NOT be deleted.
+      </div>
+    </div>
+    <div class="modal-footer" style="border-top: 1px solid var(--border-color); padding: 1rem 1.5rem; gap: 0.75rem;">
+      <button type="button" class="btn btn-secondary" onclick="closeResetWorkoutModal()">
+        Cancel
+      </button>
+      <form action="{{ url_for('reset_workout_route') }}" method="POST" style="display: inline; margin: 0;">
+        <button type="submit" class="btn btn-danger" id="btnConfirmResetWorkoutDash">
+          Reset Workout
+        </button>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- ==============================================================
+     CLIENT-SIDE LOGIC FOR TODAY'S SCHEDULE MANAGEMENT
+     ============================================================== -->
+<script>
+  window.openResetWorkoutModal = function() {
+    const modal = document.getElementById('resetWorkoutModal');
+    if (modal) {
+      modal.classList.add('active');
+      modal.classList.add('open');
+      document.body.style.overflow = 'hidden';
+    }
+  };
+
+  window.closeResetWorkoutModal = function() {
+    const modal = document.getElementById('resetWorkoutModal');
+    if (modal) {
+      modal.classList.remove('active');
+      modal.classList.remove('open');
+      document.body.style.overflow = '';
+    }
+  };
+
+(function() {
+  // 1. Data Store passed from Flask route
+  const ALL_PLAN_ROUTINES = {{ all_plan_routines | tojson | safe }};
+  const ALL_EXERCISES = {{ all_exercises | tojson | safe }};
+  const TODAY_DATE = "{{ today_date }}";
+
+  // Initial Schedule State
+  let currentSchedule = {
+    date: TODAY_DATE,
+    workout_title: "{{ (todays_workout_info['workout']['title'] if todays_workout_info.get('workout') else todays_workout_info['plan_day']['day_title'] if todays_workout_info.get('plan_day') else 'Today\'s Workout')|replace('\"', '\\\"') }}",
+    workout_id: {{ todays_workout_info['workout']['workout_id'] if todays_workout_info.get('workout') and todays_workout_info['workout'].get('workout_id') else (todays_workout_info['plan_day']['id'] if todays_workout_info.get('plan_day') else 'null') }},
+    target_muscle_group: "{{ (todays_workout_info['workout']['target_muscle_group'] if todays_workout_info.get('workout') else todays_workout_info['plan_day']['focus_category'] if todays_workout_info.get('plan_day') else 'General')|replace('\"', '\\\"') }}",
+    duration_minutes: {{ todays_workout_info['workout']['duration_minutes'] if todays_workout_info.get('workout') and todays_workout_info['workout'].get('duration_minutes') else 60 }},
+    notes: "{{ (todays_workout_info['workout']['notes'] if todays_workout_info.get('workout') and todays_workout_info['workout'].get('notes') else '')|replace('\"', '\\\"') }}",
+    exercises: [
+      {% for ex in todays_workout_info.get('exercises', []) %}
+      {
+        exercise_id: {{ ex.get('exercise_id') or ex.get('id') }},
+        exercise_name: {{ (ex.get('exercise_name') or ex.get('name'))|tojson }},
+        target_muscle: {{ (ex.get('target_muscle') or ex.get('muscle_group') or '')|tojson }},
+        category: {{ (ex.get('category') or '')|tojson }},
+        sets: {{ ex.get('sets') or 3 }},
+        reps: {{ ex.get('reps') or 10 }},
+        rest_time: {{ ex.get('rest_time') or ex.get('rest_seconds') or 90 }},
+        exercise_order: {{ loop.index }},
+        notes: {{ (ex.get('notes') or '')|tojson }},
+        youtube_id: {{ (ex.get('youtube_id') or '')|tojson }},
+        youtube_url: {{ (ex.get('youtube_url') or '')|tojson }}
+      }{% if not loop.last %},{% endif %}
+      {% endfor %}
+    ]
+  };
+
+  const initialScheduleBackup = JSON.parse(JSON.stringify(currentSchedule));
+  let replaceTargetIndex = null;
+  let pendingRemoveIndex = null;
+  let pickerFilterCategory = 'ALL';
+
+  // Modal Open/Close Controllers
+  window.openEditScheduleModal = function() {
+    // Populate form inputs
+    document.getElementById('schedWorkoutTitle').value = currentSchedule.workout_title || "Today's Workout";
+    document.getElementById('schedMuscleGroup').value = currentSchedule.target_muscle_group || 'General';
+    document.getElementById('schedDuration').value = currentSchedule.duration_minutes || 60;
+    document.getElementById('schedNotes').value = currentSchedule.notes || '';
+    
+    const selector = document.getElementById('scheduleRoutineSelector');
+    if (selector) selector.value = currentSchedule.workout_id || '';
+
+    renderScheduleExercises();
+
+    const modal = document.getElementById('editTodayScheduleModal');
+    if (modal) {
+      modal.classList.add('active');
+      modal.classList.add('open');
+      document.body.style.overflow = 'hidden';
+    }
+
+    // Try fetching freshest saved schedule from server
+    fetch(`/api/schedule/today?date=${TODAY_DATE}`)
+      .then(r => r.json())
+      .then(data => {
+        if (data && data.exercises && data.exercises.length > 0) {
+          currentSchedule.workout_title = data.workout_title;
+          currentSchedule.target_muscle_group = data.target_muscle_group;
+          currentSchedule.duration_minutes = data.duration_minutes;
+          currentSchedule.notes = data.notes;
+          currentSchedule.workout_id = data.workout_id;
+          currentSchedule.exercises = data.exercises.map((e, idx) => ({
+            exercise_id: e.exercise_id,
+            exercise_name: e.name || e.exercise_name,
+            target_muscle: e.target_muscle || '',
+            category: e.category || '',
+            sets: e.sets || 3,
+            reps: e.reps || 10,
+            rest_time: e.rest_time || e.rest_seconds || 90,
+            exercise_order: e.exercise_order || (idx + 1),
+            notes: e.notes || '',
+            youtube_id: e.youtube_id || '',
+            youtube_url: e.youtube_url || ''
+          }));
+
+          document.getElementById('schedWorkoutTitle').value = currentSchedule.workout_title;
+          document.getElementById('schedMuscleGroup').value = currentSchedule.target_muscle_group;
+          document.getElementById('schedDuration').value = currentSchedule.duration_minutes;
+          document.getElementById('schedNotes').value = currentSchedule.notes;
+          renderScheduleExercises();
+        }
+      })
+      .catch(err => {
+        console.warn("Could not background fetch schedule:", err);
+      });
+  };
+
+  window.closeEditScheduleModal = function() {
+    const modal = document.getElementById('editTodayScheduleModal');
+    if (modal) {
+      modal.classList.remove('active');
+      modal.classList.remove('open');
+      document.body.style.overflow = '';
+    }
+  };
+
+  // Render Exercise Rows inside Edit Schedule Modal
+  window.renderScheduleExercises = function() {
+    const container = document.getElementById('schedExercisesContainer');
+    const emptyState = document.getElementById('schedEmptyState');
+    const badge = document.getElementById('schedExCountBadge');
+
+    if (!container) return;
+
+    badge.textContent = currentSchedule.exercises.length;
+
+    if (currentSchedule.exercises.length === 0) {
+      container.innerHTML = '';
+      if (emptyState) emptyState.style.display = 'block';
+      return;
+    }
+
+    if (emptyState) emptyState.style.display = 'none';
+
+    let html = '';
+    currentSchedule.exercises.forEach((ex, idx) => {
+      const orderNum = idx + 1;
+      const isFirst = idx === 0;
+      const isLast = idx === currentSchedule.exercises.length - 1;
+
+      html += `
+        <div class="schedule-exercise-item" style="background: rgba(255, 255, 255, 0.03); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 1rem; display: flex; flex-direction: column; gap: 0.75rem; transition: border-color 0.2s ease;">
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; flex-wrap: wrap;">
+            <div style="display: flex; align-items: center; gap: 0.6rem;">
+              <span style="display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 6px; background: rgba(255, 87, 34, 0.15); color: #ff5722; font-weight: 700; font-size: 0.85rem;">
+                ${orderNum}
+              </span>
+              <div>
+                <strong style="font-size: 0.95rem; color: var(--text-main);">${escapeHtml(ex.exercise_name)}</strong>
+                <span class="badge badge-neutral" style="font-size: 0.68rem; margin-left: 0.4rem;">${escapeHtml(ex.target_muscle || ex.category || 'General')}</span>
+              </div>
+            </div>
+
+            <!-- Up / Down Order Buttons (Requirement 5) -->
+            <div style="display: flex; align-items: center; gap: 0.35rem;">
+              <button type="button" class="btn btn-secondary btn-sm" onclick="moveExercise(${idx}, -1)" ${isFirst ? 'disabled style="opacity: 0.4; cursor: not-allowed;"' : ''} title="Move Up" style="padding: 0.25rem 0.5rem; font-size: 0.8rem;">
+                ▲ Up
+              </button>
+              <button type="button" class="btn btn-secondary btn-sm" onclick="moveExercise(${idx}, 1)" ${isLast ? 'disabled style="opacity: 0.4; cursor: not-allowed;"' : ''} title="Move Down" style="padding: 0.25rem 0.5rem; font-size: 0.8rem;">
+                ▼ Down
+              </button>
+              <button type="button" class="btn btn-outline btn-sm" onclick="openReplaceExerciseSelector(${idx})" style="padding: 0.25rem 0.6rem; font-size: 0.8rem;" title="Replace this exercise with another from library">
+                Replace
+              </button>
+              <button type="button" class="btn btn-danger-soft btn-sm" onclick="promptRemoveExercise(${idx})" style="padding: 0.25rem 0.6rem; font-size: 0.8rem; color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.3); background: rgba(239, 68, 68, 0.1);" title="Remove from today's schedule">
+                ✕ Remove
+              </button>
+            </div>
+          </div>
+
+          <!-- Parameter Fields: Sets, Reps, Rest, Notes -->
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 0.6rem; align-items: center;">
+            <div>
+              <label class="form-label" style="font-size: 0.72rem; margin-bottom: 0.2rem;">Sets</label>
+              <input type="number" min="1" max="20" class="form-input" style="padding: 0.4rem 0.6rem; font-size: 0.85rem;" value="${ex.sets || 3}" onchange="updateExerciseVal(${idx}, 'sets', this.value)">
+            </div>
+            <div>
+              <label class="form-label" style="font-size: 0.72rem; margin-bottom: 0.2rem;">Reps</label>
+              <input type="number" min="1" max="100" class="form-input" style="padding: 0.4rem 0.6rem; font-size: 0.85rem;" value="${ex.reps || 10}" onchange="updateExerciseVal(${idx}, 'reps', this.value)">
+            </div>
+            <div>
+              <label class="form-label" style="font-size: 0.72rem; margin-bottom: 0.2rem;">Rest (seconds)</label>
+              <input type="number" min="0" max="600" step="5" class="form-input" style="padding: 0.4rem 0.6rem; font-size: 0.85rem;" value="${ex.rest_time || 90}" onchange="updateExerciseVal(${idx}, 'rest_time', this.value)">
+            </div>
+            <div style="grid-column: span 2;">
+              <label class="form-label" style="font-size: 0.72rem; margin-bottom: 0.2rem;">Technique Notes</label>
+              <input type="text" class="form-input" style="padding: 0.4rem 0.6rem; font-size: 0.85rem;" placeholder="e.g. 2-sec eccentric pause" value="${escapeHtml(ex.notes || '')}" onchange="updateExerciseVal(${idx}, 'notes', this.value)">
+            </div>
+          </div>
+        </div>
+      `;
+    });
+
+    container.innerHTML = html;
+  };
+
+  window.updateExerciseVal = function(idx, field, val) {
+    if (!currentSchedule.exercises[idx]) return;
+    if (field === 'sets' || field === 'reps' || field === 'rest_time') {
+      currentSchedule.exercises[idx][field] = parseInt(val, 10) || 0;
+    } else {
+      currentSchedule.exercises[idx][field] = val;
+    }
+  };
+
+  // Reorder Exercise (Requirement 5)
+  window.moveExercise = function(idx, direction) {
+    const targetIdx = idx + direction;
+    if (targetIdx < 0 || targetIdx >= currentSchedule.exercises.length) return;
+
+    const temp = currentSchedule.exercises[idx];
+    currentSchedule.exercises[idx] = currentSchedule.exercises[targetIdx];
+    currentSchedule.exercises[targetIdx] = temp;
+
+    // Recalculate order indices
+    currentSchedule.exercises.forEach((ex, i) => {
+      ex.exercise_order = i + 1;
+    });
+
+    renderScheduleExercises();
+  };
+
+  // Routine Switcher (Requirement 6)
+  window.applySelectedRoutine = function(dayId) {
+    if (!dayId) return;
+    const routine = ALL_PLAN_ROUTINES.find(r => String(r.day_id) === String(dayId));
+    if (!routine) return;
+
+    currentSchedule.workout_title = routine.day_title;
+    currentSchedule.workout_id = routine.day_id;
+    currentSchedule.target_muscle_group = routine.focus_category || 'General';
+    currentSchedule.duration_minutes = 60;
+    currentSchedule.exercises = routine.exercises.map((ex, idx) => ({
+      exercise_id: ex.exercise_id,
+      exercise_name: ex.exercise_name,
+      target_muscle: ex.target_muscle || '',
+      category: ex.category || '',
+      sets: ex.sets || 3,
+      reps: ex.reps || 10,
+      rest_time: ex.rest_time || 90,
+      exercise_order: idx + 1,
+      notes: ex.notes || '',
+      youtube_id: ex.youtube_id || '',
+      youtube_url: ex.youtube_url || ''
+    }));
+
+    document.getElementById('schedWorkoutTitle').value = currentSchedule.workout_title;
+    document.getElementById('schedMuscleGroup').value = currentSchedule.target_muscle_group;
+    document.getElementById('schedDuration').value = currentSchedule.duration_minutes;
+
+    renderScheduleExercises();
+  };
+
+  window.resetToInitialSchedule = function() {
+    currentSchedule = JSON.parse(JSON.stringify(initialScheduleBackup));
+    document.getElementById('schedWorkoutTitle').value = currentSchedule.workout_title;
+    document.getElementById('schedMuscleGroup').value = currentSchedule.target_muscle_group;
+    document.getElementById('schedDuration').value = currentSchedule.duration_minutes;
+    document.getElementById('schedNotes').value = currentSchedule.notes;
+    const sel = document.getElementById('scheduleRoutineSelector');
+    if (sel) sel.value = currentSchedule.workout_id || '';
+    renderScheduleExercises();
+  };
+
+  // Exercise Picker Controllers (Add & Replace)
+  window.openExercisePickerForAdd = function() {
+    replaceTargetIndex = null;
+    document.getElementById('pickerModalTitle').textContent = "Add Exercise to Schedule";
+    pickerFilterCategory = 'ALL';
+    updateCategoryPillUI();
+    document.getElementById('pickerSearchInput').value = '';
+    renderPickerList();
+
+    const modal = document.getElementById('exercisePickerModal');
+    if (modal) {
+      modal.classList.add('active');
+      modal.classList.add('open');
+    }
+  };
+
+  window.openReplaceExerciseSelector = function(idx) {
+    replaceTargetIndex = idx;
+    const ex = currentSchedule.exercises[idx];
+    document.getElementById('pickerModalTitle').textContent = `Replace Exercise: "${ex.exercise_name}"`;
+    pickerFilterCategory = 'ALL';
+    updateCategoryPillUI();
+    document.getElementById('pickerSearchInput').value = '';
+    renderPickerList();
+
+    const modal = document.getElementById('exercisePickerModal');
+    if (modal) {
+      modal.classList.add('active');
+      modal.classList.add('open');
+    }
+  };
+
+  window.closeExercisePickerModal = function() {
+    const modal = document.getElementById('exercisePickerModal');
+    if (modal) {
+      modal.classList.remove('active');
+      modal.classList.remove('open');
+    }
+  };
+
+  window.setPickerCategory = function(cat) {
+    pickerFilterCategory = cat;
+    updateCategoryPillUI();
+    renderPickerList();
+  };
+
+  function updateCategoryPillUI() {
+    document.querySelectorAll('.picker-pill').forEach(pill => {
+      if (pill.getAttribute('data-cat') === pickerFilterCategory) {
+        pill.className = 'badge badge-primary picker-pill';
+      } else {
+        pill.className = 'badge badge-neutral picker-pill';
+      }
+    });
+  }
+
+  window.filterPickerList = function() {
+    renderPickerList();
+  };
+
+  function renderPickerList() {
+    const container = document.getElementById('pickerListContainer');
+    const searchVal = (document.getElementById('pickerSearchInput').value || '').toLowerCase().trim();
+
+    const filtered = ALL_EXERCISES.filter(ex => {
+      const matchCat = (pickerFilterCategory === 'ALL') || 
+                       (ex.category && ex.category.toLowerCase().includes(pickerFilterCategory.toLowerCase())) ||
+                       (ex.muscle_group && ex.muscle_group.toLowerCase().includes(pickerFilterCategory.toLowerCase()));
+      if (!matchCat) return false;
+
+      if (!searchVal) return true;
+      const name = (ex.name || '').toLowerCase();
+      const muscle = (ex.muscle_group || '').toLowerCase();
+      const equip = (ex.equipment || '').toLowerCase();
+      return name.includes(searchVal) || muscle.includes(searchVal) || equip.includes(searchVal);
+    });
+
+    if (filtered.length === 0) {
+      container.innerHTML = `<div style="text-align: center; padding: 2rem; color: var(--text-muted);">No exercises found matching "${escapeHtml(searchVal)}".</div>`;
+      return;
+    }
+
+    let html = '';
+    filtered.forEach(ex => {
+      html += `
+        <div style="background: rgba(255, 255, 255, 0.03); border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 0.75rem 1rem; display: flex; align-items: center; justify-content: space-between; gap: 0.75rem;">
+          <div style="min-width: 0;">
+            <div style="font-weight: 600; color: var(--text-main); font-size: 0.92rem;">${escapeHtml(ex.name)}</div>
+            <div style="display: flex; gap: 0.5rem; margin-top: 0.2rem; font-size: 0.75rem; color: var(--text-muted); flex-wrap: wrap;">
+              <span class="badge badge-neutral" style="font-size: 0.65rem;">${escapeHtml(ex.muscle_group || ex.category)}</span>
+              <span>•</span>
+              <span>${escapeHtml(ex.equipment || 'Gym')}</span>
+              <span>•</span>
+              <span>${ex.default_sets || 3} sets × ${ex.default_reps || 10} reps</span>
+            </div>
+          </div>
+          <button type="button" class="btn btn-outline btn-sm" onclick="selectPickerExercise(${ex.id})" style="flex-shrink: 0;">
+            ${replaceTargetIndex !== null ? 'Replace with this' : 'Select'}
+          </button>
+        </div>
+      `;
+    });
+
+    container.innerHTML = html;
+  }
+
+  window.selectPickerExercise = function(exId) {
+    const ex = ALL_EXERCISES.find(e => e.id === exId);
+    if (!ex) return;
+
+    if (replaceTargetIndex !== null && currentSchedule.exercises[replaceTargetIndex]) {
+      // Replace exercise while retaining sets/reps
+      const target = currentSchedule.exercises[replaceTargetIndex];
+      target.exercise_id = ex.id;
+      target.exercise_name = ex.name;
+      target.target_muscle = ex.muscle_group;
+      target.category = ex.category;
+      target.youtube_id = ex.youtube_id || '';
+      target.youtube_url = ex.youtube_url || '';
+      target.notes = ex.instructions ? ex.instructions.slice(0, 80) : '';
+    } else {
+      // Add new exercise (Requirement 2)
+      currentSchedule.exercises.push({
+        exercise_id: ex.id,
+        exercise_name: ex.name,
+        target_muscle: ex.muscle_group,
+        category: ex.category,
+        sets: ex.default_sets || 3,
+        reps: ex.default_reps || 10,
+        rest_time: ex.rest_seconds || 90,
+        exercise_order: currentSchedule.exercises.length + 1,
+        notes: ex.instructions ? ex.instructions.slice(0, 80) : '',
+        youtube_id: ex.youtube_id || '',
+        youtube_url: ex.youtube_url || ''
+      });
+    }
+
+    closeExercisePickerModal();
+    renderScheduleExercises();
+  };
+
+  // Remove Exercise Confirmation (Requirement 3)
+  window.promptRemoveExercise = function(idx) {
+    pendingRemoveIndex = idx;
+    const ex = currentSchedule.exercises[idx];
+    if (!ex) return;
+
+    const qEl = document.getElementById('removeConfirmQuestion');
+    if (qEl) {
+      qEl.textContent = `Are you sure you want to remove "${ex.exercise_name}" from today's schedule?`;
+    }
+
+    const modal = document.getElementById('removeExerciseConfirmModal');
+    if (modal) {
+      modal.classList.add('active');
+      modal.classList.add('open');
+    }
+  };
+
+  window.closeRemoveConfirmModal = function() {
+    pendingRemoveIndex = null;
+    const modal = document.getElementById('removeExerciseConfirmModal');
+    if (modal) {
+      modal.classList.remove('active');
+      modal.classList.remove('open');
+    }
+  };
+
+  window.confirmExecuteRemove = function() {
+    if (pendingRemoveIndex === null || pendingRemoveIndex >= currentSchedule.exercises.length) return;
+
+    currentSchedule.exercises.splice(pendingRemoveIndex, 1);
+    currentSchedule.exercises.forEach((ex, i) => {
+      ex.exercise_order = i + 1;
+    });
+
+    closeRemoveConfirmModal();
+    renderScheduleExercises();
+  };
+
+  // Save Today's Schedule (Requirement 7 & 8)
+  window.saveTodaySchedule = function() {
+    const btn = document.getElementById('btnSaveSchedule');
+    
+    // Harvest form values
+    const title = (document.getElementById('schedWorkoutTitle').value || '').trim();
+    if (!title) {
+      alert("Please provide a workout title.");
+      return;
+    }
+
+    if (currentSchedule.exercises.length === 0) {
+      alert("Please add at least one exercise to today's schedule.");
+      return;
+    }
+
+    currentSchedule.workout_title = title;
+    currentSchedule.target_muscle_group = document.getElementById('schedMuscleGroup').value;
+    currentSchedule.duration_minutes = parseInt(document.getElementById('schedDuration').value, 10) || 60;
+    currentSchedule.notes = (document.getElementById('schedNotes').value || '').trim();
+
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = '<span>Saving Schedule...</span>';
+    }
+
+    fetch('/schedule/today/save', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Requested-With': 'XMLHttpRequest'
+      },
+      body: JSON.stringify(currentSchedule)
+    })
+    .then(r => r.json())
+    .then(data => {
+      if (data && data.success) {
+        // Show prominent success notification
+        showScheduleNotification(data.message || "Today's schedule updated successfully.");
+        closeEditScheduleModal();
+        setTimeout(() => {
+          window.location.reload();
+        }, 450);
+      } else {
+        alert(data.message || "Could not save today's schedule.");
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = 'Save Today\'s Schedule';
+        }
+      }
+    })
+    .catch(err => {
+      console.error("Save schedule error:", err);
+      // Fallback form post
+      const form = document.createElement('form');
+      form.method = 'POST';
+      form.action = '/schedule/today/save';
+      const input = document.createElement('input');
+      input.type = 'hidden';
+      input.name = 'schedule_data';
+      input.value = JSON.stringify(currentSchedule);
+      form.appendChild(input);
+      document.body.appendChild(form);
+      form.submit();
+    });
+  };
+
+  function showScheduleNotification(msg) {
+    const notif = document.createElement('div');
+    notif.className = 'alert alert-success';
+    notif.style.position = 'fixed';
+    notif.style.top = '20px';
+    notif.style.right = '20px';
+    notif.style.zIndex = '9999';
+    notif.style.boxShadow = 'var(--shadow-lg)';
+    notif.style.animation = 'modalIn 0.3s ease';
+    notif.innerHTML = `<span>${escapeHtml(msg)}</span>`;
+    document.body.appendChild(notif);
+    setTimeout(() => {
+      notif.style.opacity = '0';
+      setTimeout(() => notif.remove(), 300);
+    }, 2500);
+  }
+
+  function escapeHtml(str) {
+    if (!str) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  // Backdrop click dismiss for all modals
+  document.addEventListener('click', function(e) {
+    const editModal = document.getElementById('editTodayScheduleModal');
+    if (editModal && e.target === editModal) closeEditScheduleModal();
+
+    const pickerModal = document.getElementById('exercisePickerModal');
+    if (pickerModal && e.target === pickerModal) closeExercisePickerModal();
+
+    const removeModal = document.getElementById('removeExerciseConfirmModal');
+    if (removeModal && e.target === removeModal) closeRemoveConfirmModal();
+
+    const resetModal = document.getElementById('resetWorkoutModal');
+    if (resetModal && e.target === resetModal) closeResetWorkoutModal();
+  });
+
+  // ESC key handler
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+      const resetModal = document.getElementById('resetWorkoutModal');
+      if (resetModal && resetModal.classList.contains('active')) {
+        closeResetWorkoutModal();
+        return;
+      }
+      const removeModal = document.getElementById('removeExerciseConfirmModal');
+      if (removeModal && removeModal.classList.contains('active')) {
+        closeRemoveConfirmModal();
+        return;
+      }
+      const pickerModal = document.getElementById('exercisePickerModal');
+      if (pickerModal && pickerModal.classList.contains('active')) {
+        closeExercisePickerModal();
+        return;
+      }
+      const editModal = document.getElementById('editTodayScheduleModal');
+      if (editModal && editModal.classList.contains('active')) {
+        closeEditScheduleModal();
+      }
+    }
+  });
+
+})();
+</script>
+{% endblock %}

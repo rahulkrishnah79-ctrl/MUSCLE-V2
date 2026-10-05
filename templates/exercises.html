@@ -1,0 +1,621 @@
+{% extends "base.html" %}
+
+{% block title %}Searchable Exercise Library &amp; Video Tutorials - IronPulse{% endblock %}
+
+{% block extra_head %}
+<style>
+  .filter-chips {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    margin-bottom: 1.25rem;
+  }
+  .filter-chip {
+    padding: 0.45rem 1rem;
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 30px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: var(--transition);
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+  }
+  .filter-chip:hover {
+    border-color: var(--primary);
+    color: var(--text-heading);
+    background: var(--bg-card-hover);
+  }
+  .filter-chip.active {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: #ffffff !important;
+    box-shadow: 0 4px 12px var(--primary-glow);
+  }
+  .exercise-card {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    height: 100%;
+    transition: var(--transition);
+    border: 1px solid var(--border-color);
+    background: var(--bg-card);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+  }
+  .exercise-card:hover {
+    border-color: var(--primary);
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-md);
+  }
+  .spec-pill {
+    font-size: 0.75rem;
+    background: var(--bg-card-alt);
+    border: 1px solid var(--border-color);
+    padding: 0.25rem 0.6rem;
+    border-radius: var(--radius-sm);
+    color: var(--text-main);
+  }
+
+  /* YouTube Tutorial Card & Thumbnail */
+  .youtube-thumb-card {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+    background: #0a0e17;
+    margin-bottom: 0.85rem;
+    cursor: pointer;
+    border: 1px solid var(--border-color);
+    transition: var(--transition);
+  }
+  .youtube-thumb-card:hover {
+    border-color: #ff3333;
+    transform: scale(1.01);
+    box-shadow: 0 4px 15px rgba(255, 0, 0, 0.25);
+  }
+  .youtube-thumb-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    transition: transform 0.25s ease;
+  }
+  .youtube-thumb-card:hover .youtube-thumb-img {
+    transform: scale(1.03);
+  }
+  .youtube-play-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.35);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    transition: background 0.2s ease;
+  }
+  .youtube-thumb-card:hover .youtube-play-overlay {
+    background: rgba(0, 0, 0, 0.15);
+  }
+  .youtube-play-circle {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: #ff0000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 12px rgba(255, 0, 0, 0.45);
+    transition: transform 0.2s ease;
+  }
+  .youtube-thumb-card:hover .youtube-play-circle {
+    transform: scale(1.12);
+  }
+  .youtube-play-label {
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: #ffffff;
+    text-shadow: 0 1px 3px rgba(0,0,0,0.8);
+    letter-spacing: 0.03em;
+  }
+
+  /* Tutorial Unavailable Fallback State */
+  .tutorial-unavailable-card {
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    border-radius: var(--radius-sm);
+    background: var(--bg-card-alt);
+    border: 1px dashed var(--border-color);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    font-size: 0.78rem;
+    color: var(--text-dim);
+    margin-bottom: 0.85rem;
+    text-align: center;
+    padding: 1rem;
+  }
+
+  /* Responsive Video Modal Player */
+  .video-responsive-wrapper {
+    position: relative;
+    padding-bottom: 56.25%; /* 16:9 aspect ratio */
+    height: 0;
+    overflow: hidden;
+    border-radius: var(--radius-sm);
+    background: #000;
+  }
+  .video-responsive-wrapper iframe {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    border: 0;
+  }
+  .watch-tutorial-btn {
+    color: #ff4444;
+    border-color: rgba(255, 68, 68, 0.35);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    transition: var(--transition);
+  }
+  .watch-tutorial-btn:hover {
+    background: rgba(255, 68, 68, 0.12);
+    border-color: #ff4444;
+    color: #ff4444;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 1rem;">
+  <div>
+    <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.25rem;">
+      <span class="badge badge-primary">Hypertrophy Index</span>
+      <span class="badge badge-neutral" id="exerciseCountBadge">{{ exercises|length }} movements cataloged</span>
+      {% if active_workout_session %}
+        <a href="{{ url_for('active_workout', workout_id=active_workout_session['id']) }}" class="badge badge-green" style="text-decoration: none;">
+          ⚡ Active Session In Progress: {{ active_workout_session['title'] }} &rarr;
+        </a>
+      {% endif %}
+    </div>
+    <h1 class="title-display">Searchable Exercise Library</h1>
+    <p class="text-muted text-sm">Targeted muscle anatomy, biomechanical instructions, optimal sets/reps, and video tutorials.</p>
+  </div>
+  
+  <div style="display: flex; gap: 0.5rem; align-items: center; width: 100%; max-width: 480px;">
+    <div style="position: relative; flex: 1;">
+      <input type="text" id="exerciseSearchInput" class="form-control" placeholder="Search by name, muscle, equipment, difficulty..." value="{{ search_query }}" oninput="filterClientExercises()">
+    </div>
+    <button type="button" class="btn btn-outline" onclick="resetExerciseFilters()" id="btnResetFiltersTop" title="Reset all exercise search and category filters" style="white-space: nowrap;">
+      <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" style="vertical-align: middle; margin-right: 4px;"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path></svg>
+      Reset Filters
+    </button>
+  </div>
+</div>
+
+<!-- ================= 8 REQUIRED CATEGORIES FILTER CHIPS ================= -->
+<div style="margin-bottom: 1rem;">
+  <span class="text-xs text-muted font-bold" style="text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.5rem; display: block;">Muscle Categories:</span>
+  <div class="filter-chips" id="categoryChips">
+    <a href="{{ url_for('exercises', category='All', equipment=current_equipment, difficulty=current_difficulty, muscle=current_muscle) }}" 
+       class="filter-chip {% if current_category == 'All' %}active{% endif %}" data-cat="All">
+      All Categories
+    </a>
+    {% set cat_icons = {
+      'Chest': '🛡️',
+      'Back': '🦅',
+      'Shoulders': '🥥',
+      'Biceps': '💪',
+      'Triceps': '⚡',
+      'Legs': '🦵',
+      'Core': '🧱',
+      'Abs': '🍫'
+    } %}
+    {% for cat in ['Chest', 'Back', 'Shoulders', 'Biceps', 'Triceps', 'Legs', 'Core', 'Abs'] %}
+      <a href="{{ url_for('exercises', category=cat, equipment=current_equipment, difficulty=current_difficulty, muscle=current_muscle) }}" 
+         class="filter-chip {% if current_category == cat %}active{% endif %}" data-cat="{{ cat }}">
+        <span>{{ cat_icons.get(cat, '🏋️') }}</span> {{ cat }}
+      </a>
+    {% endfor %}
+  </div>
+</div>
+
+<!-- Secondary Filter Bar: Equipment & Difficulty Dropdowns -->
+<div class="card" style="margin-bottom: 1.5rem; padding: 1rem; background: var(--bg-card-alt);">
+  <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+    <div style="display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;">
+      
+      <!-- Equipment Filter -->
+      <div style="display: flex; align-items: center; gap: 0.5rem;">
+        <label for="filterEquipment" class="text-xs text-muted font-bold">Equipment:</label>
+        <select id="filterEquipment" class="form-control" onchange="applyDropdownFilters()" style="padding: 0.35rem 0.65rem; font-size: 0.85rem; width: auto;">
+          <option value="All" {% if current_equipment == 'All' %}selected{% endif %}>All Equipment</option>
+          {% for eq in equipment_list %}
+            <option value="{{ eq }}" {% if current_equipment == eq %}selected{% endif %}>{{ eq }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <!-- Difficulty Filter -->
+      <div style="display: flex; align-items: center; gap: 0.5rem;">
+        <label for="filterDifficulty" class="text-xs text-muted font-bold">Difficulty:</label>
+        <select id="filterDifficulty" class="form-control" onchange="applyDropdownFilters()" style="padding: 0.35rem 0.65rem; font-size: 0.85rem; width: auto;">
+          <option value="All" {% if current_difficulty == 'All' %}selected{% endif %}>All Difficulties</option>
+          {% for diff in ['Beginner', 'Intermediate', 'Advanced'] %}
+            <option value="{{ diff }}" {% if current_difficulty == diff %}selected{% endif %}>{{ diff }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+    </div>
+
+    <!-- Active Filters Reset -->
+    <a href="{{ url_for('reset_exercise_filters') }}" class="btn btn-outline btn-sm" id="btnResetExerciseFilters" style="font-size: 0.8rem; display: inline-flex; align-items: center; gap: 0.35rem;">
+      <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path></svg>
+      Reset Filters
+    </a>
+  </div>
+</div>
+
+<!-- ================= EXERCISE MOVEMENT CARDS GRID ================= -->
+<div class="grid-3" id="exerciseGrid">
+  {% for ex in exercises %}
+    <div class="card exercise-card" 
+         data-id="{{ ex['id'] }}"
+         data-category="{{ ex['category'] }}" 
+         data-name="{{ ex['name'] }}" 
+         data-muscles="{{ ex['muscle_group'] }}" 
+         data-equipment="{{ ex['equipment'] }}"
+         data-difficulty="{{ ex['difficulty'] }}">
+      
+      <div style="padding: 1.25rem 1.25rem 0 1.25rem;">
+        <!-- Top Category, Difficulty & Equipment Badges -->
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.75rem; flex-wrap: wrap; gap: 0.35rem;">
+          <div style="display: flex; gap: 0.35rem; align-items: center;">
+            <span class="badge {% if ex['category'] == 'Chest' %}badge-primary{% elif ex['category'] == 'Back' %}badge-cyan{% elif ex['category'] == 'Legs' %}badge-green{% elif ex['category'] == 'Shoulders' %}badge-amber{% elif ex['category'] == 'Biceps' %}badge-purple{% elif ex['category'] == 'Triceps' %}badge-primary{% elif ex['category'] == 'Abs' %}badge-green{% else %}badge-neutral{% endif %}">
+              {{ ex['category'] }}
+            </span>
+            <span class="badge {% if ex['difficulty'] == 'Beginner' %}badge-green{% elif ex['difficulty'] == 'Intermediate' %}badge-amber{% else %}badge-primary{% endif %}" style="font-size: 0.68rem;">
+              {{ ex['difficulty'] }}
+            </span>
+          </div>
+          <span class="badge badge-neutral" style="font-size: 0.68rem;">{{ ex['equipment'] }}</span>
+        </div>
+
+        <!-- Exercise Name -->
+        <h3 class="text-lg font-bold" style="color: var(--text-heading); margin-bottom: 0.4rem; line-height: 1.25;">{{ ex['name'] }}</h3>
+        
+        <!-- Target Muscle -->
+        <p class="text-xs font-semibold" style="color: #38bdf8; margin-bottom: 0.75rem;">
+          🎯 <strong>Target:</strong> {{ ex['muscle_group'] }}
+        </p>
+
+        <!-- YouTube Video Thumbnail / Tutorial Unavailable Card -->
+        {% if ex['youtube_id'] %}
+          <div class="youtube-thumb-card" 
+               onclick="openYouTubeModal('{{ ex['youtube_id'] }}', '{{ ex['name']|replace("'", "\\'") }}', '{{ ex['youtube_url'] or '' }}')" 
+               title="Watch {{ ex['name'] }} Tutorial">
+            <img src="https://img.youtube.com/vi/{{ ex['youtube_id'] }}/mqdefault.jpg" 
+                 alt="{{ ex['name'] }} Video Tutorial Thumbnail" 
+                 loading="lazy" 
+                 class="youtube-thumb-img">
+            <div class="youtube-play-overlay">
+              <span class="youtube-play-circle">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="white"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+              </span>
+              <span class="youtube-play-label">Watch Tutorial</span>
+            </div>
+          </div>
+        {% else %}
+          <div class="tutorial-unavailable-card">
+            <svg viewBox="0 0 24 24" width="22" height="22" stroke="currentColor" stroke-width="2" fill="none"><circle cx="12" cy="12" r="10"></circle><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"></line></svg>
+            <span style="font-weight: 600;">Tutorial unavailable</span>
+          </div>
+        {% endif %}
+
+        <!-- Biomechanical Description -->
+        <p class="text-xs text-dim" style="margin-bottom: 0.85rem; line-height: 1.45;">
+          {{ ex['description'] }}
+        </p>
+
+        <!-- Prescribed Volume Cues (Recommended Sets, Reps, Rest) -->
+        <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.85rem;">
+          <div class="spec-pill">
+            <span class="text-dim">Sets:</span> <strong>{{ ex['recommended_sets'] or '3-4 sets' }}</strong>
+          </div>
+          <div class="spec-pill">
+            <span class="text-dim">Reps:</span> <strong style="color: #34d399;">{{ ex['recommended_reps'] or '8-12 reps' }}</strong>
+          </div>
+          <div class="spec-pill">
+            <span class="text-dim">Rest:</span> <strong style="color: #38bdf8;">{{ ex['rest_seconds'] or 90 }}s</strong>
+          </div>
+        </div>
+
+        <!-- Common Mistakes Alert Box -->
+        {% if ex['common_mistakes'] %}
+          <div style="background: rgba(239, 68, 68, 0.08); border-left: 3px solid var(--danger); padding: 0.6rem 0.75rem; border-radius: var(--radius-sm); margin-bottom: 0.85rem;">
+            <span class="text-xs font-bold" style="color: #f87171; display: block; margin-bottom: 0.15rem;">⚠️ Common Mistakes:</span>
+            <p class="text-xs text-muted" style="line-height: 1.4; margin: 0;">
+              {{ ex['common_mistakes'] }}
+            </p>
+          </div>
+        {% endif %}
+      </div>
+
+      <!-- Action Footer: Watch Tutorial & Add to Workout -->
+      <div style="border-top: 1px solid var(--border-color); padding: 0.85rem 1.25rem 1.25rem 1.25rem; background: var(--bg-card-alt);">
+        
+        <!-- Collapsible Biomechanical Instructions -->
+        <details style="cursor: pointer; margin-bottom: 0.75rem;">
+          <summary class="text-xs font-bold text-primary" style="outline: none;">
+            Execution Technique &amp; Instructions &rarr;
+          </summary>
+          <div class="text-xs text-muted" style="margin-top: 0.5rem; line-height: 1.5; background: var(--bg-card); padding: 0.65rem; border-radius: var(--radius-sm); border: 1px solid var(--border-color);">
+            {{ ex['instructions'] }}
+          </div>
+        </details>
+
+        <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+          <!-- Professional Watch Tutorial Button -->
+          {% if ex['youtube_id'] %}
+            <button type="button" class="btn btn-outline btn-sm watch-tutorial-btn" 
+                    onclick="openYouTubeModal('{{ ex['youtube_id'] }}', '{{ ex['name']|replace("'", "\\'") }}', '{{ ex['youtube_url'] or '' }}')">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M19.615 3.184c-3.604-.246-11.631-.245-15.23 0-3.897.266-4.356 2.62-4.385 8.816.029 6.185.484 8.549 4.385 8.816 3.6.245 11.626.246 15.23 0 3.897-.266 4.356-2.62 4.385-8.816-.029-6.185-.484-8.549-4.385-8.816zm-10.615 12.816v-8l8 3.993-8 4.007z"/></svg>
+              Watch Tutorial
+            </button>
+          {% else %}
+            <button type="button" class="btn btn-outline btn-sm disabled" disabled style="opacity: 0.55; cursor: not-allowed; display: inline-flex; align-items: center; justify-content: center; gap: 0.4rem;">
+              <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none"><circle cx="12" cy="12" r="10"></circle><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"></line></svg>
+              Tutorial unavailable
+            </button>
+          {% endif %}
+
+          <!-- Connect with Workout System Button -->
+          {% if g.user %}
+            <button type="button" class="btn btn-secondary btn-sm" 
+                    onclick="openAddToWorkoutModal({{ ex['id'] }}, '{{ ex['name']|replace("'", "\\'") }}', {{ ex['default_sets'] or 3 }}, {{ ex['default_reps'] or 10 }})"
+                    style="font-size: 0.78rem;">
+              <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+              Add to Workout Session
+            </button>
+          {% endif %}
+        </div>
+
+      </div>
+
+    </div>
+  {% else %}
+    <div style="grid-column: 1 / -1; text-align: center; padding: 3rem 1.5rem;" class="card">
+      <p class="text-muted">No exercises found matching the selected filters.</p>
+      <a href="{{ url_for('exercises') }}" class="btn btn-primary btn-sm" style="margin-top: 1rem;">
+        Clear Filters
+      </a>
+    </div>
+  {% endfor %}
+</div>
+
+<!-- ================= MODAL: YOUTUBE VIDEO TUTORIAL ================= -->
+<div class="modal-backdrop" id="youtubeVideoModal">
+  <div class="modal-dialog" style="max-width: 740px;">
+    <div class="modal-header">
+      <div style="display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap;">
+        <span class="badge badge-primary">Exercise Tutorial</span>
+        <h3 class="text-base font-bold text-main" id="youtubeModalTitle">Exercise Video Tutorial</h3>
+      </div>
+      <button type="button" class="alert-close" onclick="closeYouTubeModal()" aria-label="Close modal">&times;</button>
+    </div>
+
+    <div class="modal-body" style="padding: 1.25rem;">
+      <!-- Responsive 16:9 Video Container (Does not download/host, uses YouTube embed) -->
+      <div class="video-responsive-wrapper">
+        <iframe id="youtubeIframe" 
+                src="" 
+                title="Exercise Tutorial Player" 
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
+                allowfullscreen></iframe>
+      </div>
+      <p class="text-xs text-muted" style="margin-top: 0.75rem; text-align: center;">
+        Evidence-based form cues &amp; technique analysis from verified fitness educators.
+      </p>
+    </div>
+
+    <div class="modal-footer" style="justify-content: space-between; flex-wrap: wrap; gap: 0.5rem;">
+      <a id="youtubeExternalLink" href="#" target="_blank" rel="noopener noreferrer" class="btn btn-outline btn-sm">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" style="display: inline; vertical-align: middle; margin-right: 0.3rem;"><path d="M19.615 3.184c-3.604-.246-11.631-.245-15.23 0-3.897.266-4.356 2.62-4.385 8.816.029 6.185.484 8.549 4.385 8.816 3.6.245 11.626.246 15.23 0 3.897-.266 4.356-2.62 4.385-8.816-.029-6.185-.484-8.549-4.385-8.816zm-10.615 12.816v-8l8 3.993-8 4.007z"/></svg>
+        Open on YouTube &rarr;
+      </a>
+      <button type="button" class="btn btn-secondary" onclick="closeYouTubeModal()">Close Video</button>
+    </div>
+  </div>
+</div>
+
+<!-- ================= MODAL: ADD EXERCISE TO WORKOUT ================= -->
+{% if g.user %}
+<div class="modal-backdrop" id="addExerciseToWorkoutModal">
+  <div class="modal-dialog">
+    <form action="{{ url_for('add_exercise_to_workout') }}" method="POST">
+      <input type="hidden" id="modalExerciseId" name="exercise_id" value="">
+      {% if active_workout_session %}
+        <input type="hidden" name="workout_id" value="{{ active_workout_session['id'] }}">
+      {% endif %}
+
+      <div class="modal-header">
+        <div>
+          <h3 class="text-lg font-bold" style="color: var(--text-heading);">Add Movement to Workout</h3>
+          <p class="text-xs text-muted" id="modalExerciseNameTitle">Select configuration</p>
+        </div>
+        <button type="button" class="alert-close" data-modal-close aria-label="Close modal">&times;</button>
+      </div>
+
+      <div class="modal-body">
+        {% if active_workout_session %}
+          <div style="background: rgba(16, 185, 129, 0.1); border: 1px solid var(--accent-green); padding: 0.75rem; border-radius: var(--radius-sm); margin-bottom: 1rem;">
+            <span class="text-xs font-bold text-green">⚡ Active Training Session Detected:</span>
+            <p class="text-sm font-semibold text-main" style="margin-top: 0.15rem;">
+              {{ active_workout_session['title'] }} (Today)
+            </p>
+          </div>
+        {% else %}
+          <div style="background: rgba(255, 87, 34, 0.08); border: 1px solid var(--border-color); padding: 0.75rem; border-radius: var(--radius-sm); margin-bottom: 1rem;">
+            <span class="text-xs font-bold text-primary">New Workout Session:</span>
+            <p class="text-xs text-muted" style="margin-top: 0.15rem;">
+              Will launch an active training session today with this movement ready to track.
+            </p>
+          </div>
+        {% endif %}
+
+        <div class="grid-3" style="background: var(--bg-card-alt); padding: 1rem; border-radius: var(--radius-sm); border: 1px solid var(--border-color); margin-bottom: 1rem;">
+          <div class="form-group" style="margin-bottom: 0;">
+            <label for="modalSets" class="form-label text-xs">Sets</label>
+            <input type="number" id="modalSets" name="sets" class="form-control" value="3" min="1" max="15" required>
+          </div>
+          <div class="form-group" style="margin-bottom: 0;">
+            <label for="modalReps" class="form-label text-xs">Reps / Set</label>
+            <input type="number" id="modalReps" name="reps" class="form-control" value="10" min="1" max="100" required>
+          </div>
+          <div class="form-group" style="margin-bottom: 0;">
+            <label for="modalWeight" class="form-label text-xs">Initial Load (kg)</label>
+            <input type="number" step="0.5" id="modalWeight" name="weight_kg" class="form-control" value="0" min="0">
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-modal-close>Cancel</button>
+        <button type="submit" class="btn btn-primary">Add &amp; Launch Session &rarr;</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endif %}
+
+<script>
+  function openYouTubeModal(videoId, title, fullUrl) {
+    if (!videoId) return;
+    const modal = document.getElementById('youtubeVideoModal');
+    const iframe = document.getElementById('youtubeIframe');
+    const titleEl = document.getElementById('youtubeModalTitle');
+    const extLink = document.getElementById('youtubeExternalLink');
+
+    if (titleEl) titleEl.textContent = title + ' - Tutorial';
+    if (extLink) extLink.href = fullUrl || `https://www.youtube.com/watch?v=${videoId}`;
+    if (iframe) {
+      iframe.src = `https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1&rel=0`;
+    }
+    if (modal) {
+      modal.classList.add('active');
+      modal.classList.add('open');
+      document.body.style.overflow = 'hidden';
+    }
+  }
+
+  function closeYouTubeModal() {
+    const modal = document.getElementById('youtubeVideoModal');
+    const iframe = document.getElementById('youtubeIframe');
+    if (iframe) {
+      iframe.src = ''; // Stops video playback immediately
+    }
+    if (modal) {
+      modal.classList.remove('active');
+      modal.classList.remove('open');
+      document.body.style.overflow = '';
+    }
+  }
+
+  // Close when clicking modal backdrop
+  document.addEventListener('DOMContentLoaded', function() {
+    const ytModal = document.getElementById('youtubeVideoModal');
+    if (ytModal) {
+      ytModal.addEventListener('click', function(e) {
+        if (e.target === ytModal) {
+          closeYouTubeModal();
+        }
+      });
+    }
+  });
+
+  function openAddToWorkoutModal(exId, exName, defaultSets, defaultReps) {
+    document.getElementById('modalExerciseId').value = exId;
+    document.getElementById('modalExerciseNameTitle').textContent = exName;
+    document.getElementById('modalSets').value = defaultSets || 3;
+    document.getElementById('modalReps').value = defaultReps || 10;
+    
+    const modal = document.getElementById('addExerciseToWorkoutModal');
+    if (modal) {
+      modal.classList.add('active');
+      modal.classList.add('open');
+      document.body.style.overflow = 'hidden';
+    }
+  }
+
+  function applyDropdownFilters() {
+    const eq = document.getElementById('filterEquipment').value;
+    const diff = document.getElementById('filterDifficulty').value;
+    const cat = "{{ current_category }}";
+    const q = document.getElementById('exerciseSearchInput').value;
+
+    let url = new URL(window.location.origin + "{{ url_for('exercises') }}");
+    if (cat !== 'All') url.searchParams.set('category', cat);
+    if (eq !== 'All') url.searchParams.set('equipment', eq);
+    if (diff !== 'All') url.searchParams.set('difficulty', diff);
+    if (q) url.searchParams.set('q', q);
+
+    window.location.href = url.toString();
+  }
+
+  function filterClientExercises() {
+    const query = document.getElementById('exerciseSearchInput').value.toLowerCase().trim();
+    const cards = document.querySelectorAll('.exercise-card');
+    let visibleCount = 0;
+
+    cards.forEach(card => {
+      const name = (card.getAttribute('data-name') || '').toLowerCase();
+      const cat = (card.getAttribute('data-category') || '').toLowerCase();
+      const muscles = (card.getAttribute('data-muscles') || '').toLowerCase();
+      const equip = (card.getAttribute('data-equipment') || '').toLowerCase();
+      const diff = (card.getAttribute('data-difficulty') || '').toLowerCase();
+
+      const matches = !query || 
+                      name.includes(query) || 
+                      cat.includes(query) || 
+                      muscles.includes(query) || 
+                      equip.includes(query) || 
+                      diff.includes(query);
+
+      if (matches) {
+        card.style.display = 'flex';
+        visibleCount++;
+      } else {
+        card.style.display = 'none';
+      }
+    });
+
+    const countBadge = document.getElementById('exerciseCountBadge');
+    if (countBadge) {
+      countBadge.textContent = visibleCount + ' movements cataloged';
+    }
+  }
+
+  function resetExerciseFilters() {
+    const searchInput = document.getElementById('exerciseSearchInput');
+    if (searchInput) searchInput.value = '';
+    const filterEq = document.getElementById('filterEquipment');
+    if (filterEq) filterEq.value = 'All';
+    const filterDiff = document.getElementById('filterDifficulty');
+    if (filterDiff) filterDiff.value = 'All';
+    window.location.href = "{{ url_for('reset_exercise_filters') }}";
+  }
+</script>
+{% endblock %}

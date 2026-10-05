@@ -1,0 +1,245 @@
+{% extends "base.html" %}
+
+{% block title %}Settings & Athlete Preferences - IronPulse{% endblock %}
+
+{% block content %}
+<div class="saas-header" style="margin-bottom: 2rem; display: flex; justify-content: space-between; align-items: flex-end; flex-wrap: wrap; gap: 1rem;">
+  <div>
+    <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.25rem;">
+      <span class="badge badge-primary">Account &amp; System</span>
+      <span class="badge badge-neutral">Preferences</span>
+    </div>
+    <h1 class="title-display">Settings &amp; Preferences</h1>
+    <p class="text-muted text-sm">Configure athlete settings, customize units, sync biometric algorithms, and manage session security.</p>
+  </div>
+  <div>
+    <button type="button" class="btn btn-outline" onclick="openResetFitnessPreferencesModal()" id="btnResetPreferencesSettingsTop" style="border-color: rgba(239, 68, 68, 0.4); color: #ef4444;" title="Reset fitness preferences to defaults">
+      <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" style="vertical-align: middle; margin-right: 4px;"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path></svg>
+      Reset Fitness Preferences
+    </button>
+  </div>
+</div>
+
+<div class="grid-sidebar">
+  
+  <!-- Left Main Column: Settings Forms -->
+  <div style="display: flex; flex-direction: column; gap: 1.5rem;">
+
+    <!-- Card 1: Account & Profile Quick Edit -->
+    <div class="card">
+      <div class="card-header">
+        <h2 class="card-title">
+          <svg viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+          Account Identity &amp; Profile Link
+        </h2>
+        <a href="{{ url_for('profile') }}" class="btn btn-outline btn-sm">Full Biometrics Profile &rarr;</a>
+      </div>
+      
+      <div style="display: flex; align-items: center; gap: 1.25rem; padding: 0.5rem 0 1.25rem; border-bottom: 1px solid var(--border-color); margin-bottom: 1.25rem;">
+        {% if g.user['profile_picture'] %}
+          <img src="{{ g.user['profile_picture'] }}" alt="{{ g.user['full_name'] }}" style="width: 64px; height: 64px; border-radius: 50%; object-fit: cover; border: 2px solid var(--primary);" referrerpolicy="no-referrer">
+        {% else %}
+          <div style="width: 64px; height: 64px; border-radius: 50%; background: linear-gradient(135deg, var(--primary), #e64a19); color: white; display: flex; align-items: center; justify-content: center; font-size: 1.5rem; font-weight: 800;">
+            {{ g.user['full_name'][0]|upper if g.user['full_name'] else 'A' }}
+          </div>
+        {% endif %}
+        <div>
+          <h3 class="text-lg font-bold" style="color: var(--text-heading);">{{ g.user['full_name'] }}</h3>
+          <p class="text-sm text-muted">@{{ g.user['username'] }} • {{ g.user['email'] }}</p>
+          <div style="display: flex; gap: 0.4rem; margin-top: 0.35rem;">
+            {% if g.user['auth_provider'] == 'google' or g.user['auth_provider'] == 'google_linked' %}
+              <span class="badge badge-cyan" style="font-size: 0.7rem;">Google OAuth Verified</span>
+            {% else %}
+              <span class="badge badge-neutral" style="font-size: 0.7rem;">Local Salted Hash Account</span>
+            {% endif %}
+            <span class="badge badge-primary" style="font-size: 0.7rem;">Tier: {{ g.user['experience_level'] }}</span>
+          </div>
+        </div>
+      </div>
+
+      <div style="display: flex; justify-content: space-between; align-items: center;">
+        <span class="text-sm text-muted">Need to edit your height, age, target weight, or macronutrient splits?</span>
+        <a href="{{ url_for('profile') }}" class="btn btn-primary btn-sm">Edit Athlete Biometrics</a>
+      </div>
+    </div>
+
+    <!-- Card 2: App Display & Performance Preferences -->
+    <div class="card">
+      <div class="card-header">
+        <h2 class="card-title">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+          Application Preferences
+        </h2>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 1.25rem;">
+        <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-color); padding-bottom: 1rem;">
+          <div>
+            <strong class="text-main" style="display: block;">Measurement Units</strong>
+            <span class="text-xs text-muted">Metrics standard for bodybuilding volume and anthropometrics</span>
+          </div>
+          <span class="badge badge-green">Metric (kg, cm, kcal)</span>
+        </div>
+
+        <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-color); padding-bottom: 1rem; flex-wrap: wrap; gap: 0.75rem;">
+          <div>
+            <strong class="text-main" style="display: block;">Interface Theme</strong>
+            <span class="text-xs text-muted">Switch between high-contrast dark gym mode and clean daylight mode</span>
+          </div>
+          <div class="theme-selector-group" id="settingsThemeSelector">
+            <button type="button" class="theme-option-btn" data-theme-choice="dark" id="themeBtnDark" title="Dark Obsidian Theme">
+              <svg viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" stroke-width="2" fill="none"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
+              Dark Mode
+            </button>
+            <button type="button" class="theme-option-btn" data-theme-choice="light" id="themeBtnLight" title="Light Daylight Theme">
+              <svg viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" stroke-width="2" fill="none"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>
+              Light Mode
+            </button>
+          </div>
+        </div>
+
+        <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-color); padding-bottom: 1rem;">
+          <div>
+            <strong class="text-main" style="display: block;">Rest Timer Audio Alert</strong>
+            <span class="text-xs text-muted">Audible bell tone when countdown interval reaches zero</span>
+          </div>
+          <span class="badge badge-green">Enabled</span>
+        </div>
+
+        <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-color); padding-bottom: 1rem;">
+          <div>
+            <strong class="text-main" style="display: block;">Collapsible Desktop Sidebar</strong>
+            <span class="text-xs text-muted">Toggle between expanded icons + text or compact icon rail</span>
+          </div>
+          <button type="button" class="btn btn-secondary btn-sm" onclick="toggleSidebar()">
+            Toggle Sidebar Now
+          </button>
+        </div>
+
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem;">
+          <div>
+            <strong class="text-main" style="display: block;">Reset Fitness Preferences</strong>
+            <span class="text-xs text-muted">Restore workout goal, 4-day frequency, equipment, and dietary presets to defaults</span>
+          </div>
+          <button type="button" class="btn btn-outline btn-sm" onclick="openResetFitnessPreferencesModal()" id="btnResetFitnessPreferencesSettings" style="border-color: rgba(239, 68, 68, 0.4); color: #ef4444;">
+            <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none" style="vertical-align: middle; margin-right: 4px;"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path></svg>
+            Reset Fitness Preferences
+          </button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Right Column: Security & Scientific Engine -->
+  <div style="display: flex; flex-direction: column; gap: 1.5rem;">
+    
+    <!-- Scientific Engine Card -->
+    <div class="card" style="background: var(--bg-card-alt);">
+      <h3 class="text-sm font-bold" style="color: var(--text-heading); margin-bottom: 0.75rem; display: flex; align-items: center; gap: 0.4rem;">
+        <svg viewBox="0 0 24 24" width="16" height="16" stroke="var(--primary)" stroke-width="2" fill="none"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 14 10"></polyline></svg>
+        Scientific Calibration
+      </h3>
+      <div style="font-size: 0.8rem; color: var(--text-muted); display: flex; flex-direction: column; gap: 0.75rem;">
+        <p><strong class="text-main">Mifflin-St Jeor Engine:</strong> Baseline metabolic expenditure calculation.</p>
+        <p><strong class="text-main">Hypertrophy Factor:</strong> Adjusted for {{ g.user['training_days_per_week'] }} training days per week.</p>
+        <p><strong class="text-main">Isolated Tenant:</strong> Database ID #{{ g.user['id'] }}.</p>
+      </div>
+      <form action="{{ url_for('apply_profile_recommendations') }}" method="POST" style="margin-top: 1rem;">
+        <button type="submit" class="btn btn-outline btn-sm btn-block">
+          Sync Scientific Recommendations
+        </button>
+      </form>
+    </div>
+
+    <!-- Security & Sign Out -->
+    <div class="card" style="background: var(--bg-card-alt); border-color: rgba(239, 68, 68, 0.25);">
+      <h3 class="text-sm font-bold" style="margin-bottom: 0.5rem; color: var(--text-heading);">🔒 Session Security</h3>
+      <p class="text-xs text-muted" style="margin-bottom: 1rem;">
+        Encrypted HTTP-only cookies protect your session across devices.
+      </p>
+      <a href="{{ url_for('logout') }}" class="btn btn-danger btn-sm btn-block">
+        Sign Out of IronPulse
+      </a>
+    </div>
+
+  </div>
+
+</div>
+
+<!-- Modal: Reset Fitness Preferences Confirmation -->
+<div class="modal-backdrop" id="resetFitnessPreferencesModal">
+  <div class="modal-dialog" style="max-width: 480px;">
+    <div class="modal-header">
+      <div style="display: flex; align-items: center; gap: 0.6rem;">
+        <div style="width: 36px; height: 36px; border-radius: 8px; background: rgba(239, 68, 68, 0.15); color: #ef4444; display: flex; align-items: center; justify-content: center;">
+          <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path></svg>
+        </div>
+        <div>
+          <h3 class="text-base font-bold" style="color: var(--text-heading); margin: 0;">Reset fitness preferences?</h3>
+          <p class="text-xs text-muted" style="margin: 0;">Confirmation Required</p>
+        </div>
+      </div>
+      <button type="button" class="alert-close" onclick="closeResetFitnessPreferencesModal()" aria-label="Close modal">&times;</button>
+    </div>
+
+    <div class="modal-body">
+      <p style="font-size: 0.95rem; color: var(--text-main); margin-bottom: 0.75rem; font-weight: 600;">
+        This will reset your workout and nutrition preferences back to default values.
+      </p>
+      <div style="background: rgba(255, 255, 255, 0.04); border-left: 3px solid #ef4444; padding: 0.75rem 0.9rem; border-radius: 4px; font-size: 0.8rem; color: var(--text-muted); line-height: 1.45;">
+        ℹ️ <strong>Safety Guarantee:</strong> Your account, login password, email, and biometric measurements (weight, height, age) will NOT be deleted. Only fitness goals, 4-day workout schedule, gym equipment, and diet preferences will be reset.
+      </div>
+    </div>
+
+    <div class="modal-footer" style="border-top: 1px solid var(--border-color); padding: 1rem 1.5rem; gap: 0.75rem;">
+      <button type="button" class="btn btn-secondary" onclick="closeResetFitnessPreferencesModal()">
+        Cancel
+      </button>
+      <form action="{{ url_for('reset_fitness_preferences') }}" method="POST" style="display: inline; margin: 0;">
+        <button type="submit" class="btn btn-danger" id="btnConfirmResetPreferencesSettings">
+          Reset Fitness Preferences
+        </button>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script>
+  function openResetFitnessPreferencesModal() {
+    const modal = document.getElementById('resetFitnessPreferencesModal');
+    if (modal) {
+      modal.classList.add('active');
+      modal.classList.add('open');
+      document.body.style.overflow = 'hidden';
+    }
+  }
+
+  function closeResetFitnessPreferencesModal() {
+    const modal = document.getElementById('resetFitnessPreferencesModal');
+    if (modal) {
+      modal.classList.remove('active');
+      modal.classList.remove('open');
+      document.body.style.overflow = '';
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', function() {
+    const prefModal = document.getElementById('resetFitnessPreferencesModal');
+    if (prefModal) {
+      prefModal.addEventListener('click', function(e) {
+        if (e.target === prefModal) closeResetFitnessPreferencesModal();
+      });
+    }
+  });
+
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+      const prefModal = document.getElementById('resetFitnessPreferencesModal');
+      if (prefModal && prefModal.classList.contains('active')) {
+        closeResetFitnessPreferencesModal();
+      }
+    }
+  });
+</script>
+{% endblock %}

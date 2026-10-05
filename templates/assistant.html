@@ -1,0 +1,837 @@
+{% extends "base.html" %}
+
+{% block title %}AI Fitness Assistant - IronPulse{% endblock %}
+
+{% block extra_head %}
+<style>
+  .assistant-container {
+    display: grid;
+    grid-template-columns: 320px 1fr;
+    gap: 1.5rem;
+    align-items: start;
+    min-height: calc(100vh - 160px);
+  }
+
+  @media (max-width: 992px) {
+    .assistant-container {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  /* Athlete Context Sidebar */
+  .context-sidebar {
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+  }
+
+  .context-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    padding: 1.25rem;
+    box-shadow: var(--shadow-sm);
+  }
+
+  .stat-grid-compact {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.75rem;
+    margin-top: 0.75rem;
+  }
+
+  .stat-item-compact {
+    background: var(--bg-card-alt);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    padding: 0.6rem 0.75rem;
+  }
+
+  .stat-item-compact .stat-label {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+  }
+
+  .stat-item-compact .stat-val {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--text-main);
+    margin-top: 0.15rem;
+  }
+
+  /* Disclaimer Banner */
+  .disclaimer-banner {
+    background: rgba(245, 158, 11, 0.08);
+    border: 1px solid rgba(245, 158, 11, 0.35);
+    border-radius: var(--radius-md);
+    padding: 0.85rem 1rem;
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    font-size: 0.8rem;
+    line-height: 1.45;
+    color: #fbd38d;
+    margin-bottom: 1.25rem;
+  }
+
+  .disclaimer-banner svg {
+    flex-shrink: 0;
+    margin-top: 0.1rem;
+    stroke: #f59e0b;
+  }
+
+  /* Chat Pane */
+  .chat-pane {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    display: flex;
+    flex-direction: column;
+    height: 780px;
+    box-shadow: var(--shadow-md);
+    overflow: hidden;
+  }
+
+  .chat-header {
+    padding: 1rem 1.5rem;
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: rgba(18, 24, 36, 0.7);
+    backdrop-filter: blur(8px);
+  }
+
+  .chat-header-title {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .ai-avatar {
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #ff5722 0%, #ff8a65 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 14px rgba(255, 87, 34, 0.4);
+    color: white;
+  }
+
+  .user-avatar {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #3b82f6 0%, #60a5fa 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-weight: 700;
+    font-size: 0.9rem;
+    flex-shrink: 0;
+  }
+
+  /* Message Stream */
+  .chat-messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+    scroll-behavior: smooth;
+  }
+
+  .message-wrapper {
+    display: flex;
+    gap: 0.75rem;
+    max-width: 85%;
+    animation: fadeInMsg 0.25s ease-out;
+  }
+
+  @keyframes fadeInMsg {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .message-wrapper.ai {
+    align-self: flex-start;
+  }
+
+  .message-wrapper.user {
+    align-self: flex-end;
+    flex-direction: row-reverse;
+  }
+
+  .message-bubble {
+    border-radius: var(--radius-lg);
+    padding: 1rem 1.25rem;
+    font-size: 0.92rem;
+    line-height: 1.6;
+    position: relative;
+    word-break: break-word;
+  }
+
+  .message-wrapper.ai .message-bubble {
+    background: var(--bg-card-alt);
+    border: 1px solid var(--border-color);
+    color: var(--text-main);
+    border-top-left-radius: 4px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+  }
+
+  .message-wrapper.user .message-bubble {
+    background: linear-gradient(135deg, #ff5722 0%, #e64a19 100%);
+    color: #ffffff;
+    border-top-right-radius: 4px;
+    box-shadow: 0 4px 12px rgba(255, 87, 34, 0.3);
+  }
+
+  .message-time {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    margin-top: 0.35rem;
+    display: block;
+  }
+
+  .message-wrapper.user .message-time {
+    color: rgba(255, 255, 255, 0.75);
+    text-align: right;
+  }
+
+  /* Formatted AI message content */
+  .formatted-content h3, .formatted-content h4 {
+    margin-top: 0.75rem;
+    margin-bottom: 0.35rem;
+    color: var(--text-heading);
+    font-size: 1rem;
+    font-weight: 700;
+  }
+
+  .formatted-content h3:first-child, .formatted-content h4:first-child {
+    margin-top: 0;
+  }
+
+  .formatted-content p {
+    margin-bottom: 0.6rem;
+  }
+
+  .formatted-content p:last-child {
+    margin-bottom: 0;
+  }
+
+  .formatted-content ul, .formatted-content ol {
+    margin: 0.4rem 0 0.75rem 1.25rem;
+    padding-left: 0.25rem;
+  }
+
+  .formatted-content li {
+    margin-bottom: 0.35rem;
+  }
+
+  .formatted-content strong {
+    color: var(--text-heading);
+    font-weight: 700;
+  }
+
+  /* Suggested Prompts Chips */
+  .suggested-section {
+    padding: 0.85rem 1.5rem;
+    border-top: 1px solid var(--border-color);
+    background: var(--bg-card-alt);
+  }
+
+  .suggested-label {
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+    margin-bottom: 0.5rem;
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+  }
+
+  .prompt-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    max-height: 90px;
+    overflow-y: auto;
+  }
+
+  .prompt-chip {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    color: var(--text-muted);
+    padding: 0.4rem 0.85rem;
+    border-radius: 30px;
+    font-size: 0.8rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: var(--transition);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    white-space: nowrap;
+    text-align: left;
+  }
+
+  .prompt-chip:hover {
+    border-color: var(--primary);
+    color: #ffffff;
+    background: var(--bg-card-hover);
+    transform: translateY(-1px);
+  }
+
+  /* Chat Input Area */
+  .chat-input-area {
+    padding: 1rem 1.5rem;
+    border-top: 1px solid var(--border-color);
+    background: var(--bg-card);
+  }
+
+  .chat-input-form {
+    display: flex;
+    gap: 0.75rem;
+    align-items: center;
+  }
+
+  .chat-input-field {
+    flex: 1;
+    background: var(--bg-card-alt);
+    border: 1px solid var(--border-color);
+    border-radius: 30px;
+    padding: 0.75rem 1.25rem;
+    color: var(--text-main);
+    font-size: 0.95rem;
+    font-family: inherit;
+    outline: none;
+    transition: var(--transition);
+  }
+
+  .chat-input-field:focus {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 2px var(--primary-glow);
+  }
+
+  .send-btn {
+    border-radius: 30px;
+    padding: 0.75rem 1.4rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-weight: 600;
+  }
+
+  /* Typing Indicator */
+  .typing-indicator {
+    display: none;
+    align-items: flex-start;
+    gap: 0.75rem;
+    padding: 0;
+    background: transparent;
+    border: none;
+    width: 100%;
+    margin-bottom: 0.5rem;
+  }
+
+  .typing-dot {
+    width: 6px;
+    height: 6px;
+    background: var(--text-muted);
+    border-radius: 50%;
+    animation: typingBounce 1.4s infinite ease-in-out both;
+  }
+
+  .typing-dot:nth-child(1) { animation-delay: -0.32s; }
+  .typing-dot:nth-child(2) { animation-delay: -0.16s; }
+
+  @keyframes typingBounce {
+    0%, 80%, 100% { transform: scale(0); opacity: 0.4; }
+    40% { transform: scale(1); opacity: 1; }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-header" style="margin-bottom: 1.5rem;">
+  <div style="display: flex; justify-content: space-between; align-items: flex-end; flex-wrap: wrap; gap: 1rem;">
+    <div>
+      <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.25rem;">
+        <span class="badge badge-primary">AI ATHLETE COACH</span>
+        <span class="badge badge-cyan">{{ context['experience'] }}</span>
+      </div>
+      <h1 class="title-display">AI Fitness Assistant</h1>
+      <p class="text-muted text-sm">Personalized workout programming, macro recommendations, and exercise science tailored to your physiological profile.</p>
+    </div>
+    <div style="display: flex; gap: 0.5rem;">
+      <button type="button" class="btn btn-outline btn-sm" onclick="openClearChatModal()" id="btnClearChatTop" style="border-color: rgba(239, 68, 68, 0.4); color: #ef4444; display: inline-flex; align-items: center; gap: 0.35rem;" title="Clear conversation history">
+        <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+        Clear Chat
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Main Container -->
+<div class="assistant-container">
+
+  <!-- Left: Athlete Profile Context Panel -->
+  <aside class="context-sidebar">
+    <div class="context-card">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+        <h3 style="font-size: 0.95rem; font-weight: 700; color: #ffffff; display: flex; align-items: center; gap: 0.4rem;">
+          <svg viewBox="0 0 24 24" width="16" height="16" stroke="var(--primary)" stroke-width="2" fill="none"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+          Active Athlete Context
+        </h3>
+        <a href="{{ url_for('profile') }}" class="text-xs" style="color: var(--primary); text-decoration: none; font-weight: 600;">Edit Profile</a>
+      </div>
+
+      <div class="stat-grid-compact">
+        <div class="stat-item-compact">
+          <div class="stat-label">Body Weight</div>
+          <div class="stat-val">{{ context['weight'] }} kg</div>
+        </div>
+        <div class="stat-item-compact">
+          <div class="stat-label">Height / Age</div>
+          <div class="stat-val">{{ context['height'] }} cm / {{ context['age'] }}y</div>
+        </div>
+        <div class="stat-item-compact">
+          <div class="stat-label">Fitness Goal</div>
+          <div class="stat-val" style="font-size: 0.85rem;" title="{{ context['goal'] }}">{{ context['goal']|truncate(16) }}</div>
+        </div>
+        <div class="stat-item-compact">
+          <div class="stat-label">Frequency</div>
+          <div class="stat-val">{{ context['frequency'] }} Days / Wk</div>
+        </div>
+      </div>
+
+      <div style="margin-top: 1rem; padding-top: 0.85rem; border-top: 1px solid var(--border-color); display: flex; flex-direction: column; gap: 0.5rem; font-size: 0.8rem;">
+        <div>
+          <span class="text-muted">Equipment:</span>
+          <strong class="text-main" style="display: block;">{{ context['equipment'] }}</strong>
+        </div>
+        <div>
+          <span class="text-muted">Dietary Preference:</span>
+          <strong class="text-main" style="display: block;">{{ context['diet'] }}</strong>
+        </div>
+        <div>
+          <span class="text-muted">Daily Target:</span>
+          <strong class="text-main" style="display: block;">{{ context['macro_targets']['calories'] }} kcal • {{ context['macro_targets']['protein'] }}g Protein</strong>
+        </div>
+        {% if context['today_nutrition']['calories'] > 0 %}
+        <div style="background: var(--bg-card-alt); border-radius: var(--radius-sm); padding: 0.5rem; margin-top: 0.25rem;">
+          <span class="text-muted">Logged Today:</span>
+          <span style="color: #4ade80; font-weight: 700; float: right;">{{ context['today_nutrition']['calories'] }} kcal ({{ context['today_nutrition']['protein'] }}g P)</span>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- Quick Prompt Ideas -->
+    <div class="context-card" style="background: linear-gradient(145deg, #121824 0%, #151d2c 100%);">
+      <h3 style="font-size: 0.85rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.6rem;">
+        What You Can Ask
+      </h3>
+      <ul style="padding-left: 1rem; margin: 0; font-size: 0.8rem; color: var(--text-muted); display: flex; flex-direction: column; gap: 0.4rem;">
+        <li>Tailored Chest / Push / Pull workouts</li>
+        <li>Macronutrient & daily protein calculations</li>
+        <li>Post-workout muscle recovery nutrition</li>
+        <li>4-Day or customized weekly workout splits</li>
+        <li>Bench press technique & progressive overload</li>
+        <li>Budget-friendly high-protein meal recipes</li>
+      </ul>
+    </div>
+  </aside>
+
+  <!-- Right: Interactive Chat Interface -->
+  <main class="chat-pane">
+    <!-- Chat Header -->
+    <div class="chat-header">
+      <div class="chat-header-title">
+        <div class="ai-avatar">
+          <svg viewBox="0 0 24 24" width="22" height="22" stroke="currentColor" stroke-width="2" fill="none"><path d="M12 2a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2 2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z"></path><path d="M4.93 4.93a2 2 0 0 1 2.83 0l1.41 1.41a2 2 0 0 1-2.83 2.83L4.93 7.76a2 2 0 0 1 0-2.83z"></path><circle cx="12" cy="12" r="4"></circle></svg>
+        </div>
+        <div>
+          <div style="font-weight: 700; color: #ffffff; font-size: 1rem;">IronPulse Assistant</div>
+          <div style="font-size: 0.75rem; color: #4ade80; display: flex; align-items: center; gap: 0.35rem;">
+            <span style="width: 7px; height: 7px; background: #4ade80; border-radius: 50%; display: inline-block;"></span>
+            Online • Context Loaded ({{ g.user['full_name'] }})
+          </div>
+        </div>
+      </div>
+      <button type="button" class="btn btn-outline btn-sm" onclick="openClearChatModal()" id="btnClearChatHeader" style="border-color: rgba(239, 68, 68, 0.4); color: #ef4444; font-size: 0.8rem; display: inline-flex; align-items: center; gap: 0.35rem;">
+        <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+        Clear Chat
+      </button>
+    </div>
+
+    <!-- Chat Messages Stream -->
+    <div class="chat-messages" id="chatMessages">
+
+      <!-- Disclaimer Banner at the top of message stream -->
+      <div class="disclaimer-banner">
+        <svg viewBox="0 0 24 24" width="18" height="18" stroke-width="2" fill="none"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+        <div>
+          <strong>Medical &amp; Professional Disclaimer:</strong> {{ disclaimer }}
+        </div>
+      </div>
+
+      <!-- Welcome default message if history is empty -->
+      {% if not chat_history %}
+      <div class="message-wrapper ai">
+        <div class="ai-avatar" style="width: 32px; height: 32px; font-size: 0.8rem;">
+          <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none"><path d="M12 2a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2 2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z"></path><circle cx="12" cy="12" r="4"></circle></svg>
+        </div>
+        <div>
+          <div class="message-bubble formatted-content">
+            <p>👋 Hello <strong>{{ g.user['full_name'] }}</strong>! Conversation cleared. How can I help you today?</p>
+            <p>I am your IronPulse AI Fitness Coach calibrated to your current stats: <strong>{{ context['weight'] }} kg</strong>, <strong>{{ context['height'] }} cm</strong>, goal of <strong>{{ context['goal'] }}</strong>, and training frequency of <strong>{{ context['frequency'] }} days/week</strong>.</p>
+            <p>Select one of the suggested prompts below or ask me any question about your workout routine, hypertrophy mechanics, or nutrition planning!</p>
+          </div>
+          <span class="message-time">Just now</span>
+        </div>
+      </div>
+      {% endif %}
+
+      <!-- Existing Chat History -->
+      {% for msg in chat_history %}
+      <div class="message-wrapper {{ msg['sender'] }}">
+        {% if msg['sender'] == 'ai' %}
+          <div class="ai-avatar" style="width: 32px; height: 32px; font-size: 0.8rem; flex-shrink: 0;">
+            <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none"><path d="M12 2a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2 2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z"></path><circle cx="12" cy="12" r="4"></circle></svg>
+          </div>
+        {% else %}
+          <div class="user-avatar">
+            {{ g.user['full_name'][0]|upper if g.user['full_name'] else 'U' }}
+          </div>
+        {% endif %}
+        <div>
+          <div class="message-bubble {% if msg['sender'] == 'ai' %}formatted-content{% endif %}" data-raw-content="{{ msg['message'] }}">
+            {{ msg['message'] }}
+          </div>
+          <span class="message-time">{{ msg['created_at'] }}</span>
+        </div>
+      </div>
+      {% endfor %}
+
+      <!-- AI Response Loading State / Typing Skeleton -->
+      <div class="typing-indicator" id="typingIndicator">
+        <div class="ai-typing-skeleton">
+          <div class="ai-avatar" style="width: 32px; height: 32px; font-size: 0.8rem; flex-shrink: 0; box-shadow: 0 0 10px rgba(255, 87, 34, 0.4);">
+            <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none"><path d="M12 2a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2 2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z"></path><circle cx="12" cy="12" r="4"></circle></svg>
+          </div>
+          <div style="flex: 1; max-width: 520px;">
+            <div class="ai-typing-box">
+              <div class="ai-typing-header">
+                <span class="typing-dot"></span>
+                <span class="typing-dot"></span>
+                <span class="typing-dot"></span>
+                <span style="font-size: 0.78rem; font-weight: 600; color: var(--text-heading); margin-left: 0.35rem;">AI Coach is analyzing biometrics &amp; crafting advice...</span>
+              </div>
+              <div class="ai-typing-lines">
+                <div class="skeleton-text long"></div>
+                <div class="skeleton-text medium"></div>
+                <div class="skeleton-text short"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Suggested Questions Chips -->
+    <div class="suggested-section">
+      <div class="suggested-label">
+        <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+        Suggested Questions
+      </div>
+      <div class="prompt-chips">
+        {% for q in suggested_questions %}
+          <button type="button" class="prompt-chip" onclick="submitSuggestedPrompt('{{ q|escape }}')">
+            <svg viewBox="0 0 24 24" width="12" height="12" stroke="var(--primary)" stroke-width="2" fill="none"><circle cx="12" cy="12" r="10"></circle><polyline points="12 16 16 12 12 8"></polyline><line x1="8" y1="12" x2="16" y2="12"></line></svg>
+            {{ q }}
+          </button>
+        {% endfor %}
+      </div>
+    </div>
+
+    <!-- Chat Input Area -->
+    <div class="chat-input-area">
+      <form id="chatForm" class="chat-input-form" action="{{ url_for('ai_assistant_chat') }}" method="POST" data-no-loader="true">
+        <input 
+          type="text" 
+          id="chatInput" 
+          name="message" 
+          class="chat-input-field" 
+          placeholder="Ask your AI coach (e.g. 'Create a chest workout', 'How much protein should I eat?')..." 
+          autocomplete="off" 
+          required
+        >
+        <button type="submit" class="btn btn-primary send-btn" id="sendBtn">
+          <span>Send</span>
+          <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+        </button>
+      </form>
+    </div>
+
+  </main>
+
+</div>
+
+<!-- Modal: Clear Chat Confirmation -->
+<div class="modal-backdrop" id="clearChatModal">
+  <div class="modal-dialog" style="max-width: 460px;">
+    <div class="modal-header">
+      <div style="display: flex; align-items: center; gap: 0.6rem;">
+        <div style="width: 36px; height: 36px; border-radius: 8px; background: rgba(239, 68, 68, 0.15); color: #ef4444; display: flex; align-items: center; justify-content: center;">
+          <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none"><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="3" y1="6" x2="21" y2="6"></line></svg>
+        </div>
+        <div>
+          <h3 class="text-base font-bold" style="color: var(--text-heading); margin: 0;">Clear this conversation?</h3>
+          <p class="text-xs text-muted" style="margin: 0;">Confirmation Required</p>
+        </div>
+      </div>
+      <button type="button" class="alert-close" onclick="closeClearChatModal()" aria-label="Close modal">&times;</button>
+    </div>
+
+    <div class="modal-body">
+      <p style="font-size: 0.95rem; color: var(--text-main); margin-bottom: 0.75rem; font-weight: 600;">
+        Clear this conversation?
+      </p>
+      <div style="background: rgba(255, 255, 255, 0.04); border-left: 3px solid #ef4444; padding: 0.75rem 0.9rem; border-radius: 4px; font-size: 0.8rem; color: var(--text-muted); line-height: 1.45;">
+        ℹ️ <strong>Safety Guarantee:</strong> This will clear your chat messages with the AI Coach. Your user profile context and fitness preferences remain completely intact.
+      </div>
+    </div>
+
+    <div class="modal-footer" style="border-top: 1px solid var(--border-color); padding: 1rem 1.5rem; gap: 0.75rem;">
+      <button type="button" class="btn btn-secondary" onclick="closeClearChatModal()">
+        Cancel
+      </button>
+      <form action="{{ url_for('ai_assistant_clear') }}" method="POST" style="display: inline; margin: 0;">
+        <button type="submit" class="btn btn-danger" id="btnConfirmClearChat">
+          Clear Chat
+        </button>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script>
+  // Simple markdown renderer for AI messages
+  function formatMarkdown(text) {
+    if (!text) return '';
+    let html = text;
+
+    // Escape HTML tags to prevent XSS
+    html = html.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+    // Headers ###
+    html = html.replace(/^### (.*$)/gim, '<h3>$1</h3>');
+    html = html.replace(/^## (.*$)/gim, '<h3>$1</h3>');
+    html = html.replace(/^# (.*$)/gim, '<h3>$1</h3>');
+
+    // Bold **text**
+    html = html.replace(/\*\*(.*?)\*\*/gim, '<strong>$1</strong>');
+
+    // Bullet points
+    html = html.replace(/^\s*[\-\*]\s+(.*$)/gim, '<li>$1</li>');
+    // Group consecutive <li> in <ul>
+    html = html.replace(/(<li>.*<\/li>(\s*<li>.*<\/li>)*)/gims, '<ul>$1</ul>');
+
+    // Numbered lists
+    html = html.replace(/^\s*\d+\.\s+(.*$)/gim, '<li>$1</li>');
+
+    // Line breaks
+    html = html.replace(/\n\n/g, '<p></p>');
+    html = html.replace(/\n/g, '<br>');
+
+    return html;
+  }
+
+  // Format existing AI messages on load
+  document.addEventListener('DOMContentLoaded', () => {
+    document.querySelectorAll('.message-wrapper.ai .formatted-content').forEach(el => {
+      const raw = el.getAttribute('data-raw-content');
+      if (raw) {
+        el.innerHTML = formatMarkdown(raw);
+      }
+    });
+
+    scrollToBottom();
+  });
+
+  const chatMessages = document.getElementById('chatMessages');
+  const chatForm = document.getElementById('chatForm');
+  const chatInput = document.getElementById('chatInput');
+  const sendBtn = document.getElementById('sendBtn');
+  const typingIndicator = document.getElementById('typingIndicator');
+
+  function scrollToBottom() {
+    if (chatMessages) {
+      chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+  }
+
+  function submitSuggestedPrompt(question) {
+    if (chatInput) {
+      chatInput.value = question;
+      handleSendMessage(question);
+    }
+  }
+
+  async function handleSendMessage(messageText) {
+    if (!messageText || !messageText.trim()) return;
+    const cleanMsg = messageText.trim();
+
+    // 1. Append user message bubble to UI
+    appendUserBubble(cleanMsg);
+    chatInput.value = '';
+    chatInput.disabled = true;
+    if (window.setButtonLoading) {
+      window.setButtonLoading(sendBtn, true, 'Thinking...');
+    } else {
+      sendBtn.disabled = true;
+    }
+
+    // 2. Show typing indicator
+    typingIndicator.style.display = 'flex';
+    scrollToBottom();
+
+    try {
+      // 3. Send AJAX POST to /assistant/chat
+      const response = await fetch("{{ url_for('ai_assistant_chat') }}", {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Requested-With': 'XMLHttpRequest'
+        },
+        body: JSON.stringify({ message: cleanMsg })
+      });
+
+      if (!response.ok) {
+        throw new Error('Server returned ' + response.status);
+      }
+
+      const data = await response.json();
+      typingIndicator.style.display = 'none';
+
+      // 4. Append AI reply bubble
+      appendAIBubble(data.reply);
+    } catch (err) {
+      console.error('Error in chat request:', err);
+      typingIndicator.style.display = 'none';
+      appendAIBubble("Sorry, an error occurred while processing your request. Please try again or submit via normal reload.");
+    } finally {
+      chatInput.disabled = false;
+      if (window.setButtonLoading) {
+        window.setButtonLoading(sendBtn, false);
+      } else {
+        sendBtn.disabled = false;
+      }
+      chatInput.focus();
+      scrollToBottom();
+    }
+  }
+
+  function appendUserBubble(text) {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'message-wrapper user';
+
+    const avatar = document.createElement('div');
+    avatar.className = 'user-avatar';
+    avatar.textContent = "{{ g.user['full_name'][0]|upper if g.user['full_name'] else 'U' }}";
+
+    const contentDiv = document.createElement('div');
+    const bubble = document.createElement('div');
+    bubble.className = 'message-bubble';
+    bubble.textContent = text;
+
+    const time = document.createElement('span');
+    time.className = 'message-time';
+    time.textContent = 'Just now';
+
+    contentDiv.appendChild(bubble);
+    contentDiv.appendChild(time);
+    wrapper.appendChild(avatar);
+    wrapper.appendChild(contentDiv);
+
+    // Insert before typing indicator
+    chatMessages.insertBefore(wrapper, typingIndicator);
+    scrollToBottom();
+  }
+
+  function appendAIBubble(rawText) {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'message-wrapper ai';
+
+    const avatar = document.createElement('div');
+    avatar.className = 'ai-avatar';
+    avatar.style.width = '32px';
+    avatar.style.height = '32px';
+    avatar.innerHTML = `<svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none"><path d="M12 2a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2 2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z"></path><circle cx="12" cy="12" r="4"></circle></svg>`;
+
+    const contentDiv = document.createElement('div');
+    const bubble = document.createElement('div');
+    bubble.className = 'message-bubble formatted-content';
+    bubble.innerHTML = formatMarkdown(rawText);
+
+    const time = document.createElement('span');
+    time.className = 'message-time';
+    time.textContent = 'Just now';
+
+    contentDiv.appendChild(bubble);
+    contentDiv.appendChild(time);
+    wrapper.appendChild(avatar);
+    wrapper.appendChild(contentDiv);
+
+    chatMessages.insertBefore(wrapper, typingIndicator);
+    scrollToBottom();
+  }
+
+  // Clear Chat Modal Handlers
+  function openClearChatModal() {
+    const modal = document.getElementById('clearChatModal');
+    if (modal) {
+      modal.classList.add('active');
+      modal.classList.add('open');
+      document.body.style.overflow = 'hidden';
+    }
+  }
+
+  function closeClearChatModal() {
+    const modal = document.getElementById('clearChatModal');
+    if (modal) {
+      modal.classList.remove('active');
+      modal.classList.remove('open');
+      document.body.style.overflow = '';
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', function() {
+    const clearModal = document.getElementById('clearChatModal');
+    if (clearModal) {
+      clearModal.addEventListener('click', function(e) {
+        if (e.target === clearModal) closeClearChatModal();
+      });
+    }
+  });
+
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+      const clearModal = document.getElementById('clearChatModal');
+      if (clearModal && clearModal.classList.contains('active')) {
+        closeClearChatModal();
+      }
+    }
+  });
+</script>
+{% endblock %}

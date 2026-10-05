@@ -1,0 +1,1279 @@
+{% extends "base.html" %}
+
+{% block title %}Workout Management & History - IronPulse{% endblock %}
+
+{% block extra_head %}
+<style>
+  .history-category-btn {
+    font-weight: 600;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    cursor: pointer;
+    border-radius: 20px;
+    padding: 0.4rem 0.95rem;
+    font-size: 0.82rem;
+  }
+  .history-category-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+  }
+  .history-category-btn.active, .history-category-btn.active:hover {
+    background: var(--primary) !important;
+    border-color: var(--primary) !important;
+    color: #ffffff !important;
+    box-shadow: 0 4px 14px var(--primary-glow) !important;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 2rem; flex-wrap: wrap; gap: 1rem;">
+  <div>
+    <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.25rem;">
+      <span class="badge badge-primary">{{ active_plan['name'] if active_plan else 'Hypertrophy Split' }}</span>
+      <span class="badge badge-neutral">{{ today_date }}</span>
+    </div>
+    <h1 class="title-display">Workout Management</h1>
+    <p class="text-muted text-sm">Full control over your training plan: browse routines, schedule sessions, modify exercises, and track progressive overload.</p>
+  </div>
+  
+  <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
+    <button class="btn btn-outline" data-modal-target="#browseWorkoutsModal">
+      <svg viewBox="0 0 24 24"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path></svg>
+      Browse Workouts Library
+    </button>
+    <button class="btn btn-secondary" data-modal-target="#planSelectorModal">
+      <svg viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
+      Switch / Generate Split
+    </button>
+    <button class="btn btn-primary" data-modal-target="#logWorkoutModal">
+      <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+      Log Manual Session
+    </button>
+  </div>
+</div>
+
+<!-- ==========================================
+     1. TODAY'S WORKOUT SECTION
+     ========================================== -->
+<div class="card" style="margin-bottom: 2rem; border-color: rgba(255, 87, 34, 0.35); background: linear-gradient(145deg, #121824 0%, #161f30 100%);">
+  <div class="card-header" style="border-bottom-color: rgba(255, 87, 34, 0.2);">
+    <div style="display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap;">
+      <span class="badge badge-primary">TODAY'S SCHEDULED ROUTINE</span>
+      {% if todays_workout_info['status'] == 'completed' %}
+        <span class="badge badge-green">✓ Session Completed</span>
+      {% elif todays_workout_info['status'] == 'in_progress' %}
+        <span class="badge badge-amber">⚡ Session In Progress ({{ todays_workout_info['completion_pct'] }}%)</span>
+      {% else %}
+        <span class="badge badge-cyan">Ready to Train</span>
+      {% endif %}
+    </div>
+
+    <!-- Today's Workout Quick Controls -->
+    <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
+      {% if todays_workout_info['is_started'] and todays_workout_info.get('workout') %}
+        {% set tw = todays_workout_info['workout'] %}
+        {% if tw['status'] == 'in_progress' %}
+          <a href="{{ url_for('active_workout', workout_id=tw['id']) }}" class="btn btn-primary btn-sm">
+            Resume Workout &rarr;
+          </a>
+          <form action="{{ url_for('complete_workout', workout_id=tw['id']) }}" method="POST" style="display: inline;">
+            <button type="submit" class="btn btn-success btn-sm" title="Mark this workout as completed">
+              ✓ Mark Completed
+            </button>
+          </form>
+        {% elif tw['status'] == 'completed' %}
+          <span class="text-xs text-green font-bold">✓ Logged &amp; Finished</span>
+        {% else %}
+          <a href="{{ url_for('active_workout', workout_id=tw['id']) }}" class="btn btn-primary btn-sm">
+            Start Workout &rarr;
+          </a>
+          <form action="{{ url_for('complete_workout', workout_id=tw['id']) }}" method="POST" style="display: inline;">
+            <button type="submit" class="btn btn-success btn-sm">
+              ✓ Mark Completed
+            </button>
+          </form>
+        {% endif %}
+
+        <!-- Workout Management Dropdown / Buttons for Today's Workout -->
+        <button type="button" class="btn btn-secondary btn-sm" onclick="openEditWorkoutModal({{ tw['id'] }}, '{{ tw['title']|replace("'", "\\'") }}', '{{ tw['date'] }}', {{ tw['duration_minutes'] or 60 }}, {{ tw['intensity_rating'] or 8 }}, '{{ tw['target_muscle_group'] or 'General' }}', '{{ (tw['notes'] or '')|replace("'", "\\'") }}')">
+          ✎ Edit
+        </button>
+        <button type="button" class="btn btn-secondary btn-sm" onclick="openReplaceWorkoutModal({{ tw['id'] }}, '{{ tw['title']|replace("'", "\\'") }}')">
+          🔄 Replace
+        </button>
+        <button type="button" class="btn btn-outline btn-sm" style="color: #ef4444; border-color: rgba(239, 68, 68, 0.4);" onclick="openRemoveWorkoutModal({{ tw['id'] }}, '{{ tw['title']|replace("'", "\\'") }}')">
+          🗑 Remove
+        </button>
+        <button type="button" class="btn btn-outline btn-sm" onclick="openResetWorkoutModal()" style="color: #ef4444; border-color: rgba(239, 68, 68, 0.4);" title="Reset today's workout to default schedule">
+          <svg viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none" style="vertical-align: middle; margin-right: 3px;"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path></svg>
+          Reset Workout
+        </button>
+      {% elif todays_workout_info['has_workout'] %}
+        <form action="{{ url_for('start_workout') }}" method="POST" style="display: inline;">
+          <input type="hidden" name="plan_day_id" value="{{ todays_workout_info['plan_day']['id'] if todays_workout_info.get('plan_day') else '' }}">
+          <button type="submit" class="btn btn-primary btn-sm">
+            <svg viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+            Start Today's Workout
+          </button>
+        </form>
+        <button type="button" class="btn btn-secondary btn-sm" data-modal-target="#browseWorkoutsModal">
+          🔄 Choose Different Routine
+        </button>
+        <button type="button" class="btn btn-outline btn-sm" onclick="openResetWorkoutModal()" style="color: #ef4444; border-color: rgba(239, 68, 68, 0.4);" title="Reset today's workout to default schedule">
+          <svg viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none" style="vertical-align: middle; margin-right: 3px;"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path></svg>
+          Reset Workout
+        </button>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if todays_workout_info['has_workout'] %}
+    <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 1rem; margin-bottom: 1.25rem;">
+      <div>
+        <h2 class="text-xl font-bold" style="color: #ffffff; margin-bottom: 0.25rem;">
+          {{ todays_workout_info['workout']['title'] if todays_workout_info.get('workout') else todays_workout_info['plan_day']['day_title'] }}
+        </h2>
+        <p class="text-xs text-muted">
+          Focus: <strong class="text-cyan">{{ todays_workout_info['workout']['target_muscle_group'] if todays_workout_info.get('workout') else todays_workout_info['plan_day']['focus_category'] }}</strong>
+          • {{ todays_workout_info['total_exercises'] }} Movements Prescribed
+        </p>
+      </div>
+
+      <!-- Completion percentage bar if started -->
+      {% if todays_workout_info['is_started'] %}
+        <div style="width: 200px;">
+          <div style="display: flex; justify-content: space-between; font-size: 0.75rem; margin-bottom: 0.25rem;">
+            <span class="text-muted">Completion Rate</span>
+            <span class="font-bold text-main">{{ todays_workout_info['completion_pct'] }}%</span>
+          </div>
+          <div class="progress-bar-bg">
+            <div class="progress-bar-fill green" style="width: {{ todays_workout_info['completion_pct'] }}%;"></div>
+          </div>
+        </div>
+      {% endif %}
+    </div>
+
+    <!-- Prescribed Exercise Movements Table with Actions -->
+    <div class="table-responsive">
+      <table class="table">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Exercise Movement</th>
+            <th>Category</th>
+            <th>Target Muscle</th>
+            <th>Sets</th>
+            <th>Reps</th>
+            <th>Rest</th>
+            <th>Weight</th>
+            <th>Status</th>
+            {% if todays_workout_info['is_started'] and todays_workout_info.get('workout') %}
+              <th style="text-align: right;">Exercise Actions</th>
+            {% endif %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for ex in todays_workout_info['exercises'] %}
+            <tr>
+              <td class="text-xs text-muted font-bold">{{ loop.index }}</td>
+              <td>
+                <strong class="text-main">{{ ex['exercise_name'] }}</strong>
+                {% if ex['youtube_id'] %}
+                  <button type="button" class="btn btn-outline btn-sm" style="padding: 0.12rem 0.45rem; font-size: 0.68rem; color: #ff4444; border-color: rgba(255, 68, 68, 0.4); margin-left: 0.35rem;" onclick="openYouTubeModal('{{ ex['youtube_id'] }}', '{{ ex['exercise_name']|replace("'", "\\'") }}', '{{ ex['youtube_url'] or '' }}')">
+                    ▶ Watch Tutorial
+                  </button>
+                {% else %}
+                  <span class="badge badge-neutral" style="font-size: 0.65rem; margin-left: 0.35rem; opacity: 0.6;">Tutorial unavailable</span>
+                {% endif %}
+              </td>
+              <td>
+                <span class="badge {% if ex['category'] == 'Chest' %}badge-primary{% elif ex['category'] == 'Back' %}badge-cyan{% elif ex['category'] == 'Legs' %}badge-green{% elif ex['category'] == 'Shoulders' %}badge-amber{% elif ex['category'] == 'Biceps' %}badge-purple{% elif ex['category'] == 'Triceps' %}badge-primary{% else %}badge-neutral{% endif %}">
+                  {{ ex['category'] }}
+                </span>
+              </td>
+              <td><span class="text-xs font-semibold text-muted">{{ ex['target_muscle'] }}</span></td>
+              <td><span class="font-bold text-main">{{ ex['sets'] }}</span></td>
+              <td><span class="font-bold text-main">{{ ex['reps'] }}</span></td>
+              <td><span class="text-cyan font-semibold">{{ ex['rest_seconds'] or 90 }}s</span></td>
+              <td><span class="font-bold text-gradient">{{ ex.get('weight_kg', 0) }} kg</span></td>
+              <td>
+                {% if ex.get('completed') == 1 %}
+                  <span class="badge badge-green">✓ Done</span>
+                {% elif todays_workout_info['status'] == 'in_progress' %}
+                  <span class="badge badge-amber">Pending</span>
+                {% else %}
+                  <span class="badge badge-neutral">Scheduled</span>
+                {% endif %}
+              </td>
+
+              {% if todays_workout_info['is_started'] and todays_workout_info.get('workout') %}
+                <td style="text-align: right; white-space: nowrap;">
+                  <!-- Reorder Up -->
+                  <form action="{{ url_for('reorder_exercise', we_id=ex['id']) }}" method="POST" style="display: inline;">
+                    <input type="hidden" name="direction" value="up">
+                    <button type="submit" class="btn btn-secondary btn-sm" style="padding: 0.2rem 0.45rem;" title="Move Up" {% if loop.first %}disabled{% endif %}>▲</button>
+                  </form>
+                  <!-- Reorder Down -->
+                  <form action="{{ url_for('reorder_exercise', we_id=ex['id']) }}" method="POST" style="display: inline;">
+                    <input type="hidden" name="direction" value="down">
+                    <button type="submit" class="btn btn-secondary btn-sm" style="padding: 0.2rem 0.45rem;" title="Move Down" {% if loop.last %}disabled{% endif %}>▼</button>
+                  </form>
+                  <!-- Edit Exercise -->
+                  <button type="button" class="btn btn-secondary btn-sm" style="padding: 0.2rem 0.55rem;" title="Edit Sets/Reps/Rest/Weight" onclick="openEditExerciseModal({{ ex['id'] }}, '{{ ex['exercise_name']|replace("'", "\\'") }}', {{ ex['sets'] }}, {{ ex['reps'] }}, {{ ex['rest_seconds'] or 90 }}, {{ ex['weight_kg'] or 0 }}, '{{ (ex['notes'] or '')|replace("'", "\\'") }}')">
+                    ✎
+                  </button>
+                  <!-- Remove Exercise -->
+                  <form action="{{ url_for('delete_exercise', we_id=ex['id']) }}" method="POST" style="display: inline;" onsubmit="return confirm('Remove {{ ex['exercise_name'] }} from this workout?');">
+                    <button type="submit" class="btn btn-secondary btn-sm" style="padding: 0.2rem 0.5rem; color: #ef4444;" title="Remove Exercise">✕</button>
+                  </form>
+                </td>
+              {% endif %}
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Button to add extra exercise to today's workout if active -->
+    {% if todays_workout_info['is_started'] and todays_workout_info.get('workout') %}
+      <div style="margin-top: 1rem; display: flex; justify-content: flex-end;">
+        <button type="button" class="btn btn-secondary btn-sm" onclick="openAddExerciseModal({{ todays_workout_info['workout']['id'] }})">
+          <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+          + Add Exercise to Today's Session
+        </button>
+      </div>
+    {% endif %}
+
+  {% else %}
+    <p class="text-muted">No scheduled routine found for today. Browse workouts or log a manual session below.</p>
+  {% endif %}
+</div>
+
+<!-- ==========================================
+     2. WORKOUT STATS & STREAK BAR
+     ========================================== -->
+<div class="grid-4" style="margin-bottom: 2rem;">
+  
+  <div class="stat-card">
+    <div class="stat-info">
+      <span class="stat-label">Weekly Consistency</span>
+      <span class="stat-value">{{ stats['weekly_count'] }} <span class="text-sm font-semibold text-muted">/ {{ stats['weekly_target'] }}</span></span>
+      <span class="stat-sub text-green">{{ stats['weekly_pct'] }}% of weekly goal</span>
+    </div>
+    <div class="stat-icon primary">
+      <svg viewBox="0 0 24 24"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"></polyline></svg>
+    </div>
+  </div>
+
+  <div class="stat-card">
+    <div class="stat-info">
+      <span class="stat-label">Workout Streak</span>
+      <span class="stat-value">{{ stats['streak'] }} <span class="text-sm font-semibold text-muted">Days</span></span>
+      <span class="stat-sub text-amber">🔥 Habit momentum</span>
+    </div>
+    <div class="stat-icon purple">
+      <svg viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
+    </div>
+  </div>
+
+  <div class="stat-card">
+    <div class="stat-info">
+      <span class="stat-label">Completed Sessions</span>
+      <span class="stat-value">{{ stats['total_completed'] }}</span>
+      <span class="stat-sub text-cyan">Logged in SQLite</span>
+    </div>
+    <div class="stat-icon green">
+      <svg viewBox="0 0 24 24"><path d="M6 4v16M18 4v16M2 8v8M22 8v8M6 12h12"/></svg>
+    </div>
+  </div>
+
+  <div class="stat-card">
+    <div class="stat-info">
+      <span class="stat-label">Total Volume Moved</span>
+      <span class="stat-value">{{ "{:,.0f}".format(stats['total_volume']) }} <span class="text-sm font-semibold text-muted">kg</span></span>
+      <span class="stat-sub text-dim">Cumulative tonnage</span>
+    </div>
+    <div class="stat-icon cyan">
+      <svg viewBox="0 0 24 24"><line x1="12" y1="1" x2="12" y2="23"></line><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
+    </div>
+  </div>
+
+</div>
+
+<!-- ==========================================
+     3. WORKOUT HISTORY FEED & MANAGEMENT
+     ========================================== -->
+<div class="card">
+  <div class="card-header">
+    <h2 class="card-title">
+      <svg viewBox="0 0 24 24"><path d="M6 4v16M18 4v16M2 8v8M22 8v8M6 12h12"/></svg>
+      Workout History &amp; Session Management
+    </h2>
+    <span class="badge badge-neutral" id="workoutHistoryCount">{{ workouts|length }} Total Recorded</span>
+  </div>
+
+  <!-- Category Filter Chips for History -->
+  <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1.25rem;">
+    <button type="button" class="btn btn-primary btn-sm history-category-btn active" data-cat="All" onclick="filterHistory('All')">All Categories</button>
+    {% for cat in ['Chest', 'Back', 'Shoulders', 'Biceps', 'Triceps', 'Legs', 'Core', 'Abs'] %}
+      <button type="button" class="btn btn-secondary btn-sm history-category-btn" data-cat="{{ cat }}" onclick="filterHistory('{{ cat }}')">{{ cat }}</button>
+    {% endfor %}
+  </div>
+
+  {% if workouts %}
+    <div style="display: flex; flex-direction: column; gap: 1.5rem;" id="workoutHistoryList">
+      <!-- Empty state when category filter has 0 records -->
+      <div id="historyEmptyState" style="display: none; text-align: center; padding: 3rem 1.5rem; background: var(--bg-card-alt); border-radius: var(--radius-md); border: 1px dashed var(--border-color); margin: 0.5rem 0;">
+        <div style="font-size: 2.2rem; margin-bottom: 0.5rem;">🏋️‍♂️</div>
+        <h3 id="historyEmptyTitle" style="color: #ffffff; font-size: 1.15rem; font-weight: 700; margin-bottom: 0.35rem;">No workout sessions found for this category.</h3>
+        <p class="text-sm text-muted" id="historyEmptyDesc" style="margin-bottom: 1.25rem;">No workout sessions recorded under <strong id="historyEmptyCatName" style="color: var(--primary);">this category</strong>.</p>
+        <button type="button" class="btn btn-secondary btn-sm" onclick="filterHistory('All')">View All Categories</button>
+      </div>
+
+      {% for w in workouts %}
+        <div class="card workout-history-card" 
+             data-category="{{ w['target_muscle_group'] }}" 
+             data-categories="{{ w['categories_csv'] or w['target_muscle_group'] }}" 
+             data-target="{{ w['target_muscle_group'] }}" 
+             data-title="{{ w['title'] }}" 
+             style="background: var(--bg-card-alt); border-left: 4px solid var(--primary); margin-bottom: 0;">
+          
+          <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 0.75rem; margin-bottom: 0.85rem;">
+            <div>
+              <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.25rem; flex-wrap: wrap;">
+                <span class="badge badge-primary">{{ w['date'] }}</span>
+                <span class="badge badge-neutral">{{ w['duration_minutes'] }} Mins</span>
+                <span class="badge badge-amber">Intensity: {{ w['intensity_rating'] }}/10</span>
+                {% if w['status'] == 'completed' %}
+                  <span class="badge badge-green">✓ Completed</span>
+                {% elif w['status'] == 'in_progress' %}
+                  <span class="badge badge-amber">⚡ In Progress</span>
+                {% else %}
+                  <span class="badge badge-cyan">Scheduled</span>
+                {% endif %}
+              </div>
+              <h3 class="text-lg font-bold" style="color: #ffffff;">{{ w['title'] }}</h3>
+              <div style="display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; margin-top: 0.25rem;">
+                <span class="text-xs text-cyan font-semibold">Focus: {{ w['target_muscle_group'] }}</span>
+                {% if w['categories'] %}
+                  <span style="opacity: 0.4; font-size: 0.75rem;">•</span>
+                  {% for c in w['categories'] %}
+                    <span class="badge badge-neutral text-xs" style="font-size: 0.68rem; padding: 0.15rem 0.45rem; border-color: rgba(255,107,0,0.3);">{{ c }}</span>
+                  {% endfor %}
+                {% endif %}
+              </div>
+            </div>
+
+            <!-- Load Volume & Workout Level Actions -->
+            <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 0.5rem;">
+              <div style="text-align: right;">
+                <span class="text-xs text-muted font-bold" style="text-transform: uppercase;">Total Load Volume</span>
+                <div style="font-size: 1.4rem; font-weight: 800; color: #ff784e;">
+                  {{ "{:,.0f}".format(w['total_volume_kg']) }} kg
+                </div>
+              </div>
+
+              <div style="display: flex; gap: 0.4rem; flex-wrap: wrap;">
+                {% if w['status'] != 'completed' %}
+                  <form action="{{ url_for('complete_workout', workout_id=w['id']) }}" method="POST" style="display: inline;">
+                    <button type="submit" class="btn btn-success btn-sm" style="padding: 0.25rem 0.5rem;">✓ Complete</button>
+                  </form>
+                {% endif %}
+                <button type="button" class="btn btn-secondary btn-sm" style="padding: 0.25rem 0.5rem;" onclick="openEditWorkoutModal({{ w['id'] }}, '{{ w['title']|replace("'", "\\'") }}', '{{ w['date'] }}', {{ w['duration_minutes'] or 60 }}, {{ w['intensity_rating'] or 8 }}, '{{ w['target_muscle_group'] or 'General' }}', '{{ (w['notes'] or '')|replace("'", "\\'") }}')">
+                  ✎ Edit
+                </button>
+                <button type="button" class="btn btn-secondary btn-sm" style="padding: 0.25rem 0.5rem;" onclick="openReplaceWorkoutModal({{ w['id'] }}, '{{ w['title']|replace("'", "\\'") }}')">
+                  🔄 Replace
+                </button>
+                <button type="button" class="btn btn-secondary btn-sm" style="padding: 0.25rem 0.5rem;" onclick="openAddExerciseModal({{ w['id'] }})">
+                  + Add Exercise
+                </button>
+                <button type="button" class="btn btn-outline btn-sm" style="padding: 0.25rem 0.5rem; color: #ef4444; border-color: rgba(239, 68, 68, 0.4);" onclick="openRemoveWorkoutModal({{ w['id'] }}, '{{ w['title']|replace("'", "\\'") }}')">
+                  🗑 Remove
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {% if w['notes'] %}
+            <p class="text-xs text-dim" style="background: rgba(0,0,0,0.25); padding: 0.5rem 0.75rem; border-radius: 4px; margin-bottom: 0.85rem; border-left: 2px solid var(--border-hover);">
+              💡 <strong>Session Reflections:</strong> {{ w['notes'] }}
+            </p>
+          {% endif %}
+
+          <!-- Detailed Exercises Performed Table -->
+          {% set w_exercises = exercises_by_workout.get(w['id'], []) %}
+          {% if w_exercises %}
+            <div class="table-responsive">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>Movement</th>
+                    <th>Category</th>
+                    <th>Sets</th>
+                    <th>Reps</th>
+                    <th>Weight</th>
+                    <th>Rest</th>
+                    <th>Volume</th>
+                    <th style="text-align: right;">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for we in w_exercises %}
+                    <tr>
+                      <td class="text-xs text-muted font-bold">{{ loop.index }}</td>
+                      <td>
+                        <strong class="text-main">{{ we['exercise_name'] }}</strong>
+                        {% if we['youtube_id'] %}
+                          <button type="button" class="btn btn-outline btn-sm" style="padding: 0.12rem 0.45rem; font-size: 0.68rem; color: #ff4444; border-color: rgba(255, 68, 68, 0.4); margin-left: 0.35rem;" onclick="openYouTubeModal('{{ we['youtube_id'] }}', '{{ we['exercise_name']|replace("'", "\\'") }}', '{{ we['youtube_url'] or '' }}')">
+                            ▶ Watch Tutorial
+                          </button>
+                        {% else %}
+                          <span class="badge badge-neutral" style="font-size: 0.65rem; margin-left: 0.35rem; opacity: 0.6;">Tutorial unavailable</span>
+                        {% endif %}
+                      </td>
+                      <td><span class="badge badge-neutral">{{ we['exercise_category'] }}</span></td>
+                      <td><span class="font-bold text-main">{{ we['sets'] }}</span></td>
+                      <td><span class="font-bold text-main">{{ we['reps'] }}</span></td>
+                      <td><span class="font-bold text-gradient">{{ we['weight_kg'] }} kg</span></td>
+                      <td><span class="text-xs text-cyan">{{ we['rest_seconds'] or 90 }}s</span></td>
+                      <td><span class="text-muted font-semibold">{{ "{:,.0f}".format(we['sets'] * we['reps'] * we['weight_kg']) }} kg</span></td>
+                      <td style="text-align: right; white-space: nowrap;">
+                        <!-- Reorder Up -->
+                        <form action="{{ url_for('reorder_exercise', we_id=we['id']) }}" method="POST" style="display: inline;">
+                          <input type="hidden" name="direction" value="up">
+                          <button type="submit" class="btn btn-secondary btn-sm" style="padding: 0.15rem 0.4rem;" title="Move Up" {% if loop.first %}disabled{% endif %}>▲</button>
+                        </form>
+                        <!-- Reorder Down -->
+                        <form action="{{ url_for('reorder_exercise', we_id=we['id']) }}" method="POST" style="display: inline;">
+                          <input type="hidden" name="direction" value="down">
+                          <button type="submit" class="btn btn-secondary btn-sm" style="padding: 0.15rem 0.4rem;" title="Move Down" {% if loop.last %}disabled{% endif %}>▼</button>
+                        </form>
+                        <!-- Edit Exercise -->
+                        <button type="button" class="btn btn-secondary btn-sm" style="padding: 0.15rem 0.45rem;" title="Edit Sets/Reps/Rest/Weight" onclick="openEditExerciseModal({{ we['id'] }}, '{{ we['exercise_name']|replace("'", "\\'") }}', {{ we['sets'] }}, {{ we['reps'] }}, {{ we['rest_seconds'] or 90 }}, {{ we['weight_kg'] or 0 }}, '{{ (we['notes'] or '')|replace("'", "\\'") }}')">
+                          ✎
+                        </button>
+                        <!-- Remove Exercise -->
+                        <form action="{{ url_for('delete_exercise', we_id=we['id']) }}" method="POST" style="display: inline;" onsubmit="return confirm('Remove {{ we['exercise_name'] }} from this workout?');">
+                          <button type="submit" class="btn btn-secondary btn-sm" style="padding: 0.15rem 0.45rem; color: #ef4444;" title="Remove Exercise">✕</button>
+                        </form>
+                      </td>
+                    </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          {% else %}
+            <p class="text-xs text-muted" style="padding: 0.5rem 0;">No individual exercises recorded in this session. <button type="button" class="btn btn-link btn-sm" onclick="openAddExerciseModal({{ w['id'] }})">+ Add Exercise</button></p>
+          {% endif %}
+
+        </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <div style="text-align: center; padding: 3rem 1.5rem;">
+      <p class="text-muted">No completed workouts recorded yet.</p>
+    </div>
+  {% endif %}
+</div>
+
+<!-- ==========================================
+     MODAL: BROWSE WORKOUTS CATALOG
+     ========================================== -->
+<div class="modal-backdrop" id="browseWorkoutsModal">
+  <div class="modal-dialog" style="max-width: 850px;">
+    <div class="modal-header">
+      <h3 class="text-lg font-bold" style="color: var(--text-heading);">
+        <svg viewBox="0 0 24 24" width="20" height="20" style="display: inline; vertical-align: middle; margin-right: 0.4rem;"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path></svg>
+        Browse Workout Library &amp; Splits
+      </h3>
+      <button type="button" class="alert-close" data-modal-close aria-label="Close modal">&times;</button>
+    </div>
+
+    <div class="modal-body" style="max-height: 75vh; overflow-y: auto;">
+      <p class="text-xs text-muted" style="margin-bottom: 1.25rem;">
+        Explore evidence-based training splits. You can activate an entire split as your program or add individual routines directly to your personal schedule.
+      </p>
+
+      {% for plan in detailed_plans %}
+        <div class="card" style="margin-bottom: 1.25rem; background: var(--bg-card-alt); border: 1px solid var(--border-color);">
+          <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 0.75rem; margin-bottom: 0.75rem;">
+            <div>
+              <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.25rem; flex-wrap: wrap;">
+                <span class="badge badge-primary">{{ plan['days_per_week'] }} Days/Week</span>
+                <span class="badge badge-neutral">{{ plan['experience_level'] }}</span>
+                <span class="badge badge-cyan">{{ plan['available_equipment'] }}</span>
+                {% if active_plan and active_plan['id'] == plan['id'] %}
+                  <span class="badge badge-green">✓ Your Current Active Split</span>
+                {% endif %}
+              </div>
+              <h4 class="text-base font-bold text-main">{{ plan['name'] }}</h4>
+              <p class="text-xs text-muted" style="margin-top: 0.2rem;">{{ plan['description'] }}</p>
+            </div>
+
+            <!-- Split Activation Button -->
+            <form action="{{ url_for('select_plan') }}" method="POST">
+              <input type="hidden" name="plan_id" value="{{ plan['id'] }}">
+              <button type="submit" class="btn btn-primary btn-sm">
+                Activate Whole Split
+              </button>
+            </form>
+          </div>
+
+          <!-- Routines / Days within this Plan -->
+          <div style="display: flex; flex-direction: column; gap: 0.75rem; margin-top: 0.75rem; border-top: 1px solid var(--border-color); padding-top: 0.75rem;">
+            {% for day in plan['days'] %}
+              <div style="background: var(--bg-card); padding: 0.75rem; border-radius: var(--radius-sm); border: 1px solid var(--border-color);">
+                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
+                  <div>
+                    <span class="badge badge-neutral" style="font-size: 0.68rem;">Day {{ day['day_number'] }}</span>
+                    <strong class="text-sm text-main" style="margin-left: 0.35rem;">{{ day['day_title'] }}</strong>
+                    <span class="text-xs text-muted"> • Focus: <span class="text-cyan">{{ day['focus_category'] }}</span> ({{ day['exercises']|length }} exercises)</span>
+                  </div>
+
+                  <!-- Add this routine to personal schedule -->
+                  <form action="{{ url_for('add_to_plan') }}" method="POST" style="display: flex; align-items: center; gap: 0.4rem;">
+                    <input type="hidden" name="plan_day_id" value="{{ day['id'] }}">
+                    <input type="date" name="date" class="form-control" value="{{ today_date }}" style="padding: 0.2rem 0.5rem; font-size: 0.75rem; width: 130px;">
+                    <button type="submit" class="btn btn-secondary btn-sm" style="white-space: nowrap; font-size: 0.75rem;">
+                      + Add to Plan
+                    </button>
+                  </form>
+                </div>
+
+                <!-- Prescribed Movements Expandable -->
+                <details style="margin-top: 0.5rem;">
+                  <summary class="text-xs font-semibold text-primary" style="cursor: pointer; outline: none;">
+                    Preview {{ day['exercises']|length }} Exercises &rarr;
+                  </summary>
+                  <div class="table-responsive" style="margin-top: 0.4rem;">
+                    <table class="table" style="font-size: 0.8rem;">
+                      <thead>
+                        <tr>
+                          <th>Movement</th>
+                          <th>Muscle</th>
+                          <th>Sets</th>
+                          <th>Reps</th>
+                          <th>Rest</th>
+                          <th>Tutorial</th>
+                          <th>Cues</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {% for ex in day['exercises'] %}
+                          <tr>
+                            <td><strong class="text-main">{{ ex['exercise_name'] }}</strong></td>
+                            <td class="text-muted">{{ ex['muscle_group'] }}</td>
+                            <td>{{ ex['sets'] }}</td>
+                            <td>{{ ex['reps'] }}</td>
+                            <td class="text-cyan">{{ ex['rest_seconds'] }}s</td>
+                            <td>
+                              {% if ex['youtube_id'] %}
+                                <button type="button" class="btn btn-outline btn-sm" style="padding: 0.1rem 0.4rem; font-size: 0.68rem; color: #ff4444; border-color: rgba(255,68,68,0.35);" onclick="openYouTubeModal('{{ ex['youtube_id'] }}', '{{ ex['exercise_name']|replace("'", "\\'") }}', '{{ ex['youtube_url'] or '' }}')">
+                                  ▶ Tutorial
+                                </button>
+                              {% else %}
+                                <span class="badge badge-neutral" style="font-size: 0.65rem; opacity: 0.6;">Unavailable</span>
+                              {% endif %}
+                            </td>
+                            <td class="text-dim text-xs">{{ ex['notes'] }}</td>
+                          </tr>
+                        {% endfor %}
+                      </tbody>
+                    </table>
+                  </div>
+                </details>
+              </div>
+            {% endfor %}
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+
+    <div class="modal-footer">
+      <button type="button" class="btn btn-secondary" data-modal-close>Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- ==========================================
+     MODAL: CONFIRM REMOVE WORKOUT (SPEC REQUIREMENT)
+     Title: "Are you sure you want to remove this workout?"
+     Buttons: Cancel, Remove Workout
+     ========================================== -->
+<div class="modal-backdrop" id="removeWorkoutModal">
+  <div class="modal-dialog">
+    <form id="removeWorkoutForm" method="POST" action="">
+      <div class="modal-header">
+        <h3 class="text-lg font-bold" style="color: #ef4444;">Are you sure you want to remove this workout?</h3>
+        <button type="button" class="alert-close" data-modal-close aria-label="Close modal">&times;</button>
+      </div>
+
+      <div class="modal-body">
+        <p class="text-sm text-main" id="removeWorkoutDesc" style="margin-bottom: 0.75rem;">
+          This will remove the selected workout session from your personal training plan.
+        </p>
+
+        <div style="background: rgba(239, 68, 68, 0.08); border-left: 3px solid #ef4444; padding: 0.75rem 0.9rem; border-radius: 4px; margin-top: 0.5rem;">
+          <p class="text-xs text-muted" style="margin: 0; line-height: 1.45;">
+            <strong style="color: var(--text-main);">Safe Operation:</strong> Removing this workout only modifies your personal schedule. It will <strong style="color: var(--text-main);">NOT delete</strong> the workout template or exercises from the global workout library.
+          </p>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-modal-close>Cancel</button>
+        <button type="submit" class="btn btn-danger">Remove Workout</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ==========================================
+     MODAL: REPLACE WORKOUT ROUTINE
+     ========================================== -->
+<div class="modal-backdrop" id="replaceWorkoutModal">
+  <div class="modal-dialog">
+    <form id="replaceWorkoutForm" method="POST" action="">
+      <div class="modal-header">
+        <h3 class="text-lg font-bold" style="color: var(--text-heading);">Replace Workout Routine</h3>
+        <button type="button" class="alert-close" data-modal-close aria-label="Close modal">&times;</button>
+      </div>
+
+      <div class="modal-body">
+        <p class="text-sm text-muted" style="margin-bottom: 1rem;">
+          Choose a routine from the workout library to replace <strong id="replaceWorkoutTitle" class="text-main"></strong>. The title, target muscle focus, and exercise list will be updated with the selected routine.
+        </p>
+
+        <div class="form-group">
+          <label for="replace_plan_day_id" class="form-label font-bold text-main">Select Replacement Routine</label>
+          <select id="replace_plan_day_id" name="plan_day_id" class="form-control" required>
+            {% for r in all_plan_routines %}
+              <option value="{{ r['day_id'] }}">
+                {{ r['plan_name'] }} &rarr; {{ r['day_title'] }} ({{ r['focus_category'] }} • {{ r['exercise_count'] }} ex)
+              </option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-modal-close>Cancel</button>
+        <button type="submit" class="btn btn-primary">Replace Workout</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ==========================================
+     MODAL: EDIT WORKOUT DETAILS
+     ========================================== -->
+<div class="modal-backdrop" id="editWorkoutModal">
+  <div class="modal-dialog">
+    <form id="editWorkoutForm" method="POST" action="">
+      <div class="modal-header">
+        <h3 class="text-lg font-bold" style="color: var(--text-heading);">Edit Workout Details</h3>
+        <button type="button" class="alert-close" data-modal-close aria-label="Close modal">&times;</button>
+      </div>
+
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="edit_workout_title" class="form-label">Workout Title</label>
+          <input type="text" id="edit_workout_title" name="title" class="form-control" required>
+        </div>
+
+        <div class="grid-2">
+          <div class="form-group">
+            <label for="edit_workout_date" class="form-label">Date</label>
+            <input type="date" id="edit_workout_date" name="date" class="form-control" required>
+          </div>
+          <div class="form-group">
+            <label for="edit_workout_target_muscle" class="form-label">Target Muscle Focus</label>
+            <input type="text" id="edit_workout_target_muscle" name="target_muscle_group" class="form-control" placeholder="e.g. Chest & Triceps">
+          </div>
+        </div>
+
+        <div class="grid-2">
+          <div class="form-group">
+            <label for="edit_workout_duration" class="form-label">Duration (Minutes)</label>
+            <input type="number" id="edit_workout_duration" name="duration_minutes" class="form-control" min="5" max="300">
+          </div>
+          <div class="form-group">
+            <label for="edit_workout_intensity" class="form-label">Intensity (1-10)</label>
+            <input type="number" id="edit_workout_intensity" name="intensity_rating" class="form-control" min="1" max="10">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="edit_workout_notes" class="form-label">Notes &amp; Reflections</label>
+          <textarea id="edit_workout_notes" name="notes" rows="3" class="form-control" placeholder="Session reflections, pump, cues..."></textarea>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-modal-close>Cancel</button>
+        <button type="submit" class="btn btn-primary">Save Changes</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ==========================================
+     MODAL: ADD EXERCISE TO WORKOUT
+     ========================================== -->
+<div class="modal-backdrop" id="addExerciseModal">
+  <div class="modal-dialog">
+    <form action="{{ url_for('add_exercise') }}" method="POST">
+      <input type="hidden" name="workout_id" id="add_ex_workout_id" value="">
+      <div class="modal-header">
+        <h3 class="text-lg font-bold" style="color: var(--text-heading);">Add Exercise to Workout</h3>
+        <button type="button" class="alert-close" data-modal-close aria-label="Close modal">&times;</button>
+      </div>
+
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="add_ex_exercise_id" class="form-label font-bold text-main">Select Exercise Movement</label>
+          <select id="add_ex_exercise_id" name="exercise_id" class="form-control" required>
+            <option value="">-- Choose from Exercise Library --</option>
+            {% for ex in exercise_options %}
+              <option value="{{ ex['id'] }}">{{ ex['name'] }} ({{ ex['category'] }} • {{ ex['equipment'] }})</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="grid-3">
+          <div class="form-group">
+            <label for="add_ex_sets" class="form-label text-xs">Working Sets</label>
+            <input type="number" id="add_ex_sets" name="sets" class="form-control" value="3" min="1" max="20" required>
+          </div>
+          <div class="form-group">
+            <label for="add_ex_reps" class="form-label text-xs">Reps / Set</label>
+            <input type="number" id="add_ex_reps" name="reps" class="form-control" value="10" min="1" max="100" required>
+          </div>
+          <div class="form-group">
+            <label for="add_ex_weight" class="form-label text-xs">Load (kg)</label>
+            <input type="number" step="0.5" id="add_ex_weight" name="weight_kg" class="form-control" value="0" min="0">
+          </div>
+        </div>
+
+        <div class="grid-2">
+          <div class="form-group">
+            <label for="add_ex_rest" class="form-label text-xs">Rest Time (seconds)</label>
+            <input type="number" id="add_ex_rest" name="rest_seconds" class="form-control" value="90" min="15" max="600">
+          </div>
+          <div class="form-group">
+            <label for="add_ex_notes" class="form-label text-xs">Execution Notes / Cues</label>
+            <input type="text" id="add_ex_notes" name="notes" class="form-control" placeholder="e.g. Focus on deep eccentric stretch">
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-modal-close>Cancel</button>
+        <button type="submit" class="btn btn-primary">Add Exercise</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ==========================================
+     MODAL: EDIT EXERCISE PARAMETERS
+     ========================================== -->
+<div class="modal-backdrop" id="editExerciseModal">
+  <div class="modal-dialog">
+    <form id="editExerciseForm" method="POST" action="">
+      <div class="modal-header">
+        <h3 class="text-lg font-bold" style="color: var(--text-heading);">Edit Exercise Parameters</h3>
+        <button type="button" class="alert-close" data-modal-close aria-label="Close modal">&times;</button>
+      </div>
+
+      <div class="modal-body">
+        <p class="text-sm font-bold text-main" id="edit_ex_name_display" style="margin-bottom: 1rem; color: #ff5722;"></p>
+
+        <div class="grid-3">
+          <div class="form-group">
+            <label for="edit_ex_sets" class="form-label text-xs">Working Sets</label>
+            <input type="number" id="edit_ex_sets" name="sets" class="form-control" min="1" max="20" required>
+          </div>
+          <div class="form-group">
+            <label for="edit_ex_reps" class="form-label text-xs">Reps / Set</label>
+            <input type="number" id="edit_ex_reps" name="reps" class="form-control" min="1" max="100" required>
+          </div>
+          <div class="form-group">
+            <label for="edit_ex_weight" class="form-label text-xs">Load (kg)</label>
+            <input type="number" step="0.5" id="edit_ex_weight" name="weight_kg" class="form-control" min="0">
+          </div>
+        </div>
+
+        <div class="grid-2">
+          <div class="form-group">
+            <label for="edit_ex_rest" class="form-label text-xs">Rest Time (seconds)</label>
+            <input type="number" id="edit_ex_rest" name="rest_seconds" class="form-control" min="15" max="600">
+          </div>
+          <div class="form-group">
+            <label for="edit_ex_notes" class="form-label text-xs">Notes / Cues</label>
+            <input type="text" id="edit_ex_notes" name="notes" class="form-control">
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-modal-close>Cancel</button>
+        <button type="submit" class="btn btn-primary">Save Exercise</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ==========================================
+     MODAL: SWITCH / GENERATE WORKOUT PLAN
+     ========================================== -->
+<div class="modal-backdrop" id="planSelectorModal">
+  <div class="modal-dialog">
+    <div class="modal-header">
+      <h3 class="text-lg font-bold" style="color: var(--text-heading);">Workout Plan Management</h3>
+      <button type="button" class="alert-close" data-modal-close aria-label="Close modal">&times;</button>
+    </div>
+
+    <div class="modal-body">
+      <!-- Select from existing plans -->
+      <form action="{{ url_for('select_plan') }}" method="POST" style="margin-bottom: 1.75rem;">
+        <label for="plan_id" class="form-label font-bold text-main">Activate Pre-Built Split</label>
+        <div style="display: flex; gap: 0.5rem;">
+          <select id="plan_id" name="plan_id" class="form-control" required>
+            {% for p in all_plans %}
+              <option value="{{ p['id'] }}" {% if active_plan and active_plan['id'] == p['id'] %}selected{% endif %}>
+                {{ p['name'] }} ({{ p['days_per_week'] }} Days/Wk • {{ p['fitness_goal'] }})
+              </option>
+            {% endfor %}
+          </select>
+          <button type="submit" class="btn btn-primary" style="white-space: nowrap;" data-loading-text="Activating Split...">Activate</button>
+        </div>
+      </form>
+
+      <div style="border-top: 1px dashed var(--border-color); padding-top: 1.25rem;">
+        <h4 class="text-sm font-bold text-muted" style="text-transform: uppercase; margin-bottom: 0.75rem;">Generate Custom Routine</h4>
+      </div>
+
+      <!-- Generate custom plan form -->
+      <form action="{{ url_for('generate_custom_plan') }}" method="POST">
+        <div class="grid-2">
+          <div class="form-group">
+            <label for="days_per_week" class="form-label">Training Days / Week</label>
+            <select id="days_per_week" name="days_per_week" class="form-control">
+              <option value="3">3 Days (Full Body / Recomp)</option>
+              <option value="4" selected>4 Days (Upper / Lower Split)</option>
+              <option value="5">5 Days (Push / Pull / Legs)</option>
+              <option value="6">6 Days (PPL Frequency)</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="target_muscle_group" class="form-label">Target Muscle Focus</label>
+            <select id="target_muscle_group" name="target_muscle_group" class="form-control">
+              <option value="All" selected>All (Balanced Hypertrophy)</option>
+              <option value="Chest">Chest Specialization</option>
+              <option value="Back">Back &amp; Lat Density</option>
+              <option value="Shoulders">Shoulder Width &amp; Delts</option>
+              <option value="Biceps">Biceps Peak</option>
+              <option value="Triceps">Triceps Horseshoe</option>
+              <option value="Legs">Leg Mass &amp; Quads</option>
+              <option value="Core">Core Stability</option>
+              <option value="Abs">Abdominals &amp; Six-Pack</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="grid-2">
+          <div class="form-group">
+            <label for="fitness_goal_plan" class="form-label">Goal</label>
+            <input type="text" id="fitness_goal_plan" name="fitness_goal" class="form-control" value="{{ g.user['fitness_goal'] }}">
+          </div>
+          <div class="form-group">
+            <label for="experience_level_plan" class="form-label">Experience Tier</label>
+            <input type="text" id="experience_level_plan" name="experience_level" class="form-control" value="{{ g.user['experience_level'] }}">
+          </div>
+        </div>
+
+        <button type="submit" class="btn btn-success btn-block" data-loading-text="Generating Periodized Split...">Generate &amp; Activate Plan</button>
+      </form>
+    </div>
+
+    <div class="modal-footer">
+      <button type="button" class="btn btn-secondary" data-modal-close>Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- ==========================================
+     MODAL: LOG MANUAL WORKOUT FORM
+     ========================================== -->
+<div class="modal-backdrop" id="logWorkoutModal">
+  <div class="modal-dialog">
+    <form action="{{ url_for('add_workout') }}" method="POST">
+      <div class="modal-header">
+        <h3 class="text-lg font-bold" style="color: var(--text-heading);">Log Manual Workout</h3>
+        <button type="button" class="alert-close" data-modal-close aria-label="Close modal">&times;</button>
+      </div>
+
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="title" class="form-label">Workout Title</label>
+          <input type="text" id="title" name="title" class="form-control" placeholder="e.g. Saturday Arm Day Burnout" required>
+        </div>
+
+        <div class="grid-2">
+          <div class="form-group">
+            <label for="workout_date" class="form-label">Date</label>
+            <input type="date" id="workout_date" name="date" class="form-control" value="{{ today_date }}" required>
+          </div>
+          <div class="form-group">
+            <label for="duration_minutes" class="form-label">Duration (Minutes)</label>
+            <input type="number" id="duration_minutes" name="duration_minutes" class="form-control" value="60" min="10" max="300">
+          </div>
+        </div>
+
+        <div class="grid-2">
+          <div class="form-group">
+            <label for="intensity_rating" class="form-label">Intensity (1-10)</label>
+            <select id="intensity_rating" name="intensity_rating" class="form-control">
+              <option value="7">7 - Moderate</option>
+              <option value="8" selected>8 - Hard Working</option>
+              <option value="9">9 - Near Failure</option>
+              <option value="10">10 - Maximum PR</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="exercise_id" class="form-label">Primary Exercise</label>
+            <select id="exercise_id" name="exercise_id" class="form-control">
+              <option value="">-- Select Exercise Movement --</option>
+              {% for ex in exercise_options %}
+                <option value="{{ ex['id'] }}">{{ ex['name'] }} ({{ ex['category'] }})</option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+
+        <div class="grid-3" style="background: var(--bg-card-alt); padding: 1rem; border-radius: var(--radius-sm); margin-bottom: 1.25rem; border: 1px solid var(--border-color);">
+          <div class="form-group" style="margin-bottom: 0;">
+            <label for="sets" class="form-label text-xs">Working Sets</label>
+            <input type="number" id="sets" name="sets" class="form-control" value="3" min="1" max="20">
+          </div>
+          <div class="form-group" style="margin-bottom: 0;">
+            <label for="reps" class="form-label text-xs">Reps per Set</label>
+            <input type="number" id="reps" name="reps" class="form-control" value="10" min="1" max="100">
+          </div>
+          <div class="form-group" style="margin-bottom: 0;">
+            <label for="weight_kg" class="form-label text-xs">Load (kg)</label>
+            <input type="number" step="0.5" id="weight_kg" name="weight_kg" class="form-control" value="50" min="0">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="notes" class="form-label">Notes</label>
+          <textarea id="notes" name="notes" rows="2" class="form-control" placeholder="Form feedback, cues, rest intervals..."></textarea>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-modal-close>Cancel</button>
+        <button type="submit" class="btn btn-primary">Save Session</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+  function filterHistory(selectedCategory) {
+    const activeCategory = (selectedCategory || 'All').trim();
+
+    // 1. Update button states
+    const buttons = document.querySelectorAll('.history-category-btn');
+    buttons.forEach(btn => {
+      const btnCat = (btn.getAttribute('data-cat') || '').trim();
+      if (btnCat.toLowerCase() === activeCategory.toLowerCase()) {
+        btn.classList.add('active', 'btn-primary');
+        btn.classList.remove('btn-secondary');
+        btn.setAttribute('aria-pressed', 'true');
+      } else {
+        btn.classList.remove('active', 'btn-primary');
+        btn.classList.add('btn-secondary');
+        btn.setAttribute('aria-pressed', 'false');
+      }
+    });
+
+    // 2. Filter workout history cards
+    const cards = document.querySelectorAll('.workout-history-card');
+    let visibleCount = 0;
+
+    cards.forEach(card => {
+      const catsCsv = (card.getAttribute('data-categories') || '').toLowerCase();
+      const targetMuscle = (card.getAttribute('data-target') || '').toLowerCase();
+      const title = (card.getAttribute('data-title') || '').toLowerCase();
+      const combined = `${catsCsv},${targetMuscle},${title}`;
+
+      let matches = false;
+      if (activeCategory.toLowerCase() === 'all') {
+        matches = true;
+      } else {
+        const catNorm = activeCategory.toLowerCase();
+        const catList = catsCsv.split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+
+        if (catList.includes(catNorm)) {
+          matches = true;
+        } else if (catNorm === 'abs' && (catList.includes('core') || combined.includes('abs') || combined.includes('abdom') || combined.includes('core'))) {
+          matches = true;
+        } else if (catNorm === 'core' && (catList.includes('abs') || combined.includes('core') || combined.includes('abs') || combined.includes('abdom'))) {
+          matches = true;
+        } else if (combined.includes(catNorm)) {
+          matches = true;
+        }
+      }
+
+      if (matches) {
+        card.style.display = '';
+        visibleCount++;
+      } else {
+        card.style.display = 'none';
+      }
+    });
+
+    // 3. Update counter badge
+    const countBadge = document.getElementById('workoutHistoryCount');
+    if (countBadge) {
+      countBadge.textContent = `${visibleCount} Total Recorded`;
+    }
+
+    // 4. Update empty state
+    const emptyState = document.getElementById('historyEmptyState');
+    if (emptyState) {
+      if (visibleCount === 0 && cards.length > 0) {
+        emptyState.style.display = 'block';
+        const emptyCat = document.getElementById('historyEmptyCatName');
+        if (emptyCat) emptyCat.textContent = activeCategory;
+      } else {
+        emptyState.style.display = 'none';
+      }
+    }
+
+    // 5. Update URL search param without full reload
+    try {
+      const currentUrl = new URL(window.location.href);
+      if (activeCategory.toLowerCase() === 'all') {
+        currentUrl.searchParams.delete('category');
+      } else {
+        currentUrl.searchParams.set('category', activeCategory);
+      }
+      window.history.replaceState({}, '', currentUrl.toString());
+    } catch (e) {
+      // Ignore URL update errors in non-standard environments
+    }
+  }
+
+  // Initialize filter on page load
+  document.addEventListener('DOMContentLoaded', function() {
+    const params = new URLSearchParams(window.location.search);
+    const initialCat = params.get('category') || '{{ selected_category or "All" }}';
+    filterHistory(initialCat);
+  });
+
+  // Remove Workout Modal
+  function openRemoveWorkoutModal(workoutId, workoutTitle) {
+    const form = document.getElementById('removeWorkoutForm');
+    form.action = `/workouts/delete/${workoutId}`;
+    const desc = document.getElementById('removeWorkoutDesc');
+    if (desc) {
+      desc.textContent = `Are you sure you want to remove "${workoutTitle}" from your personal workout plan?`;
+    }
+    const modal = document.getElementById('removeWorkoutModal');
+    if (modal) modal.classList.add('active');
+  }
+
+  // Replace Workout Modal
+  function openReplaceWorkoutModal(workoutId, workoutTitle) {
+    const form = document.getElementById('replaceWorkoutForm');
+    form.action = `/workouts/replace/${workoutId}`;
+    const titleEl = document.getElementById('replaceWorkoutTitle');
+    if (titleEl) titleEl.textContent = `"${workoutTitle}"`;
+    const modal = document.getElementById('replaceWorkoutModal');
+    if (modal) modal.classList.add('active');
+  }
+
+  // Edit Workout Modal
+  function openEditWorkoutModal(workoutId, title, dateVal, duration, intensity, targetMuscle, notes) {
+    const form = document.getElementById('editWorkoutForm');
+    form.action = `/workouts/edit/${workoutId}`;
+    document.getElementById('edit_workout_title').value = title || '';
+    document.getElementById('edit_workout_date').value = dateVal || '';
+    document.getElementById('edit_workout_duration').value = duration || 60;
+    document.getElementById('edit_workout_intensity').value = intensity || 8;
+    document.getElementById('edit_workout_target_muscle').value = targetMuscle || '';
+    document.getElementById('edit_workout_notes').value = notes || '';
+    const modal = document.getElementById('editWorkoutModal');
+    if (modal) modal.classList.add('active');
+  }
+
+  // Add Exercise Modal
+  function openAddExerciseModal(workoutId) {
+    document.getElementById('add_ex_workout_id').value = workoutId;
+    const modal = document.getElementById('addExerciseModal');
+    if (modal) modal.classList.add('active');
+  }
+
+  // Edit Exercise Modal
+  function openEditExerciseModal(weId, exName, sets, reps, rest, weight, notes) {
+    const form = document.getElementById('editExerciseForm');
+    form.action = `/workouts/exercise/edit/${weId}`;
+    document.getElementById('edit_ex_name_display').textContent = `Editing: ${exName}`;
+    document.getElementById('edit_ex_sets').value = sets || 3;
+    document.getElementById('edit_ex_reps').value = reps || 10;
+    document.getElementById('edit_ex_rest').value = rest || 90;
+    document.getElementById('edit_ex_weight').value = weight || 0;
+    document.getElementById('edit_ex_notes').value = notes || '';
+    const modal = document.getElementById('editExerciseModal');
+    if (modal) modal.classList.add('active');
+  }
+
+  // YouTube Video Modal Controller
+  function openYouTubeModal(videoId, title, fullUrl) {
+    if (!videoId) return;
+    const modal = document.getElementById('youtubeVideoModal');
+    const iframe = document.getElementById('youtubeIframe');
+    const titleEl = document.getElementById('youtubeModalTitle');
+    const extLink = document.getElementById('youtubeExternalLink');
+
+    if (titleEl) titleEl.textContent = title + ' - Tutorial';
+    if (extLink) extLink.href = fullUrl || `https://www.youtube.com/watch?v=${videoId}`;
+    if (iframe) {
+      iframe.src = `https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1&rel=0`;
+    }
+    if (modal) {
+      modal.classList.add('active');
+      modal.classList.add('open');
+      document.body.style.overflow = 'hidden';
+    }
+  }
+
+  function closeYouTubeModal() {
+    const modal = document.getElementById('youtubeVideoModal');
+    const iframe = document.getElementById('youtubeIframe');
+    if (iframe) {
+      iframe.src = '';
+    }
+    if (modal) {
+      modal.classList.remove('active');
+      modal.classList.remove('open');
+      document.body.style.overflow = '';
+    }
+  }
+
+  // Reset Workout Modal Controllers (Requirement 1)
+  function openResetWorkoutModal() {
+    const modal = document.getElementById('resetWorkoutModal');
+    if (modal) {
+      modal.classList.add('active');
+      modal.classList.add('open');
+      document.body.style.overflow = 'hidden';
+    }
+  }
+
+  function closeResetWorkoutModal() {
+    const modal = document.getElementById('resetWorkoutModal');
+    if (modal) {
+      modal.classList.remove('active');
+      modal.classList.remove('open');
+      document.body.style.overflow = '';
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', function() {
+    const ytModal = document.getElementById('youtubeVideoModal');
+    if (ytModal) {
+      ytModal.addEventListener('click', function(e) {
+        if (e.target === ytModal) {
+          closeYouTubeModal();
+        }
+      });
+    }
+
+    const resetModal = document.getElementById('resetWorkoutModal');
+    if (resetModal) {
+      resetModal.addEventListener('click', function(e) {
+        if (e.target === resetModal) {
+          closeResetWorkoutModal();
+        }
+      });
+    }
+  });
+</script>
+
+<!-- ================= MODAL: RESET TODAY'S WORKOUT (Requirement 1) ================= -->
+<div class="modal-backdrop" id="resetWorkoutModal" style="z-index: 1060;">
+  <div class="modal-dialog" style="max-width: 480px; background: var(--bg-card); border: 1px solid rgba(239, 68, 68, 0.35); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg);">
+    <div class="modal-header" style="border-bottom: 1px solid var(--border-color); padding: 1.25rem 1.5rem;">
+      <div style="display: flex; align-items: center; gap: 0.5rem;">
+        <span class="badge badge-danger">Workout Reset</span>
+        <h3 class="text-base font-bold text-main" style="margin: 0; color: #ef4444;">Reset today's workout?</h3>
+      </div>
+      <button type="button" class="alert-close" onclick="closeResetWorkoutModal()" aria-label="Close modal">&times;</button>
+    </div>
+    <div class="modal-body" style="padding: 1.5rem;">
+      <p style="font-size: 0.95rem; color: var(--text-main); margin-bottom: 0.75rem; font-weight: 600;">
+        This will remove your custom changes for today's workout and restore the original workout schedule.
+      </p>
+      <div style="background: rgba(255, 255, 255, 0.04); border-left: 3px solid #ff5722; padding: 0.75rem 0.9rem; border-radius: 4px; font-size: 0.8rem; color: var(--text-muted); line-height: 1.45;">
+        ℹ️ <strong>Safety Guarantee:</strong> Your workout history, completed workouts from previous dates, and the global exercise library will NOT be deleted.
+      </div>
+    </div>
+    <div class="modal-footer" style="border-top: 1px solid var(--border-color); padding: 1rem 1.5rem; gap: 0.75rem;">
+      <button type="button" class="btn btn-secondary" onclick="closeResetWorkoutModal()">
+        Cancel
+      </button>
+      <form action="{{ url_for('reset_workout_route') }}" method="POST" style="display: inline; margin: 0;">
+        <button type="submit" class="btn btn-danger" id="btnConfirmResetWorkout">
+          Reset Workout
+        </button>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- ================= MODAL: YOUTUBE VIDEO TUTORIAL ================= -->
+<div class="modal-backdrop" id="youtubeVideoModal">
+  <div class="modal-dialog" style="max-width: 740px;">
+    <div class="modal-header">
+      <div style="display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap;">
+        <span class="badge badge-primary">Exercise Tutorial</span>
+        <h3 class="text-base font-bold text-main" id="youtubeModalTitle">Exercise Video Tutorial</h3>
+      </div>
+      <button type="button" class="alert-close" onclick="closeYouTubeModal()" aria-label="Close modal">&times;</button>
+    </div>
+
+    <div class="modal-body" style="padding: 1.25rem;">
+      <div style="position: relative; padding-bottom: 56.25%; height: 0; overflow: hidden; border-radius: var(--radius-sm); background: #000;">
+        <iframe id="youtubeIframe" 
+                src="" 
+                title="Exercise Tutorial Player" 
+                style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: 0;"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
+                allowfullscreen></iframe>
+      </div>
+      <p class="text-xs text-muted" style="margin-top: 0.75rem; text-align: center;">
+        Evidence-based form cues &amp; technique analysis from verified fitness educators.
+      </p>
+    </div>
+
+    <div class="modal-footer" style="justify-content: space-between; flex-wrap: wrap; gap: 0.5rem;">
+      <a id="youtubeExternalLink" href="#" target="_blank" rel="noopener noreferrer" class="btn btn-outline btn-sm">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" style="display: inline; vertical-align: middle; margin-right: 0.3rem;"><path d="M19.615 3.184c-3.604-.246-11.631-.245-15.23 0-3.897.266-4.356 2.62-4.385 8.816.029 6.185.484 8.549 4.385 8.816 3.6.245 11.626.246 15.23 0 3.897-.266 4.356-2.62 4.385-8.816-.029-6.185-.484-8.549-4.385-8.816zm-10.615 12.816v-8l8 3.993-8 4.007z"/></svg>
+        Open on YouTube &rarr;
+      </a>
+      <button type="button" class="btn btn-secondary" onclick="closeYouTubeModal()">Close Video</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
