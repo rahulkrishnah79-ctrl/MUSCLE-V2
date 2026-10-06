@@ -1,16 +1,70 @@
 import sqlite3
 import os
+import shutil
 from datetime import date, timedelta
 from werkzeug.security import generate_password_hash
 
-DATABASE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'fitness_tracker.db')
-SCHEMA_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'schema.sql')
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+SCHEMA_PATH = os.path.join(BASE_DIR, 'schema.sql')
+
+def get_database_path():
+    """
+    Resolves the SQLite database path.
+    In Vercel serverless environment (detected via VERCEL env var or AWS_LAMBDA_FUNCTION_NAME),
+    copies or creates the database in writable /tmp to allow read-write operations.
+    In local development, uses fitness_tracker.db in the project directory.
+    Can be explicitly overridden via the DATABASE_PATH environment variable.
+    """
+    configured_path = os.environ.get('DATABASE_PATH')
+    if configured_path:
+        return configured_path
+
+    # If running on Vercel or serverless environment
+    if os.environ.get('VERCEL') or os.environ.get('AWS_LAMBDA_FUNCTION_NAME'):
+        tmp_db = '/tmp/fitness_tracker.db'
+        repo_db = os.path.join(BASE_DIR, 'fitness_tracker.db')
+        # If tmp_db does not exist yet in this container instance
+        if not os.path.exists(tmp_db):
+            if os.path.exists(repo_db) and os.path.getsize(repo_db) > 0:
+                try:
+                    shutil.copyfile(repo_db, tmp_db)
+                except Exception:
+                    pass
+        return tmp_db
+
+    return os.path.join(BASE_DIR, 'fitness_tracker.db')
+
+DATABASE_PATH = get_database_path()
 
 def get_db():
     """Establish connection to SQLite database with row factory for dictionary-like access."""
-    conn = sqlite3.connect(DATABASE_PATH)
+    db_path = get_database_path()
+    db_existed = os.path.exists(db_path) and os.path.getsize(db_path) > 0
+
+    conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
+
+    # If the database was newly created in a serverless environment like /tmp, initialize it
+    if not db_existed:
+        try:
+            if os.path.exists(SCHEMA_PATH):
+                with open(SCHEMA_PATH, 'r', encoding='utf-8') as f:
+                    conn.executescript(f.read())
+                conn.commit()
+                migrate_tables(conn)
+                import exercise_catalog
+                exercise_catalog.seed_exercise_catalog(conn)
+                import workout_manager
+                workout_manager.get_or_create_default_plans(conn)
+                import nutrition_manager
+                nutrition_manager.init_food_library(conn)
+                import ai_assistant
+                ai_assistant.init_chat_tables(conn)
+                seed_demo_user_and_data(conn)
+        except Exception:
+            pass
+
     return conn
 
 def migrate_tables(conn):

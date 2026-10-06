@@ -5,8 +5,9 @@ import secrets
 import urllib.parse
 from datetime import date, datetime, timedelta
 from functools import wraps
-from flask import Flask, render_template, request, redirect, url_for, session, flash, g, jsonify
+from flask import Flask, render_template, request, redirect, url_for, session, flash, g, jsonify, send_from_directory
 from werkzeug.security import check_password_hash, generate_password_hash
+from werkzeug.middleware.proxy_fix import ProxyFix
 from dotenv import load_dotenv
 import requests
 import logging
@@ -28,7 +29,15 @@ import progress_manager
 import ai_assistant
 import food_recognition
 
-app = Flask(__name__)
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+app = Flask(
+    __name__,
+    template_folder=os.path.join(BASE_DIR, 'templates'),
+    static_folder=os.path.join(BASE_DIR, 'static'),
+    static_url_path='/static'
+)
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
 app.secret_key = os.environ.get('SECRET_KEY', 'ironpulse-fitness-secret-key-2026')
 app.permanent_session_lifetime = timedelta(days=7)
 
@@ -38,8 +47,16 @@ GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v3/userinfo"
 
 # Profile Picture (PFP) Upload Configuration
-UPLOAD_AVATAR_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static', 'uploads', 'avatars')
-os.makedirs(UPLOAD_AVATAR_DIR, exist_ok=True)
+if os.environ.get('VERCEL') or os.environ.get('AWS_LAMBDA_FUNCTION_NAME'):
+    UPLOAD_AVATAR_DIR = '/tmp/uploads/avatars'
+else:
+    UPLOAD_AVATAR_DIR = os.path.join(BASE_DIR, 'static', 'uploads', 'avatars')
+
+try:
+    os.makedirs(UPLOAD_AVATAR_DIR, exist_ok=True)
+except Exception as _dir_err:
+    logger.warning(f"Could not create upload directory {UPLOAD_AVATAR_DIR}: {_dir_err}")
+
 ALLOWED_AVATAR_EXTENSIONS = {'jpg', 'jpeg', 'png', 'webp'}
 MAX_AVATAR_FILE_SIZE = 5 * 1024 * 1024  # 5 MB
 
@@ -2254,6 +2271,16 @@ def profile():
 
     metrics = calculate_fitness_metrics(g.user)
     return render_template('profile.html', metrics=metrics)
+
+@app.route('/static/uploads/avatars/<path:filename>')
+def serve_uploaded_avatar(filename):
+    """Serves uploaded avatars from writable UPLOAD_AVATAR_DIR (e.g. /tmp on Vercel) or bundled static fallback."""
+    if os.path.exists(os.path.join(UPLOAD_AVATAR_DIR, filename)):
+        return send_from_directory(UPLOAD_AVATAR_DIR, filename)
+    fallback_dir = os.path.join(BASE_DIR, 'static', 'uploads', 'avatars')
+    if os.path.exists(os.path.join(fallback_dir, filename)):
+        return send_from_directory(fallback_dir, filename)
+    return ("Avatar image not found", 404)
 
 @app.route('/profile/picture/upload', methods=['POST'])
 @login_required
