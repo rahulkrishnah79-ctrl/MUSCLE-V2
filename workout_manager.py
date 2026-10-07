@@ -843,8 +843,6 @@ def calculate_dashboard_workout_stats(user_id, training_days_target=4):
         'total_completed': overall['total_completed'],
         'total_volume': overall['total_volume']
     }
-
-
 def get_all_plans_with_details(conn=None):
     """
     Fetches all workout plans with their days and exercises
