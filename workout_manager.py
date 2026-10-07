@@ -799,11 +799,7 @@ def calculate_dashboard_workout_stats(user_id, training_days_target=4):
         WHERE user_id = ? AND status = 'completed'
         ORDER BY date DESC
     """, (user_id,))
-   dates = [
-    r['date'] if isinstance(r['date'], date)
-    else datetime.strptime(r['date'], "%Y-%m-%d").date()
-    for r in cursor.fetchall()
-]
+   dates = [datetime.strptime(r['date'], "%Y-%m-%d").date() for r in cursor.fetchall()]
     streak = 0
     if dates:
         check_date = today
