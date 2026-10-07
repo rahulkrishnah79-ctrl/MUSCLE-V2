@@ -778,38 +778,51 @@ def calculate_dashboard_workout_stats(user_id, training_days_target=4):
     # Calculate start of this calendar week (Monday)
     start_of_week = today - timedelta(days=today.weekday())
 
-    cursor.execute("""
+        cursor.execute("""
         SELECT COUNT(*) as weekly_count
         FROM workouts
         WHERE user_id = ? AND date >= ? AND status = 'completed'
     """, (user_id, start_of_week.isoformat()))
+
     weekly_count = cursor.fetchone()['weekly_count']
 
     # Total completed workouts & volume
     cursor.execute("""
-        SELECT COUNT(*) as total_completed, COALESCE(SUM(total_volume_kg), 0) as total_volume
+        SELECT COUNT(*) as total_completed,
+               COALESCE(SUM(total_volume_kg), 0) as total_volume
         FROM workouts
         WHERE user_id = ? AND status = 'completed'
     """, (user_id,))
+
     overall = cursor.fetchone()
 
-    # Calculate active workout streak (days where workouts took place in sequence)
+    # Calculate active workout streak
     cursor.execute("""
-        SELECT DISTINCT date FROM workouts
+        SELECT DISTINCT date
+        FROM workouts
         WHERE user_id = ? AND status = 'completed'
         ORDER BY date DESC
     """, (user_id,))
-   dates = [
-    r['date'] if isinstance(r['date'], date)
-    else datetime.strptime(r['date'], "%Y-%m-%d").date()
-    for r in cursor.fetchall()
-]
+
+    dates = [
+        r['date']
+        if isinstance(r['date'], date)
+        else datetime.strptime(str(r['date']), "%Y-%m-%d").date()
+        for r in cursor.fetchall()
+    ]
+
     streak = 0
+
     if dates:
         check_date = today
+
         # If no workout today, check if yesterday was completed
         if check_date not in dates:
             check_date = today - timedelta(days=1)
+
+        while check_date in dates:
+            streak += 1
+            check_date -= timedelta(days=1)
         
         while check_date in dates:
             streak += 1
