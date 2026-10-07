@@ -38,7 +38,44 @@ app = Flask(
     static_url_path='/static'
 )
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
-app.secret_key = os.environ.get('SECRET_KEY', 'ironpulse-fitness-secret-key-2026')
+
+# Environment and HTTPS/Vercel Production Detection
+is_vercel = bool(os.environ.get('VERCEL') == '1' or os.environ.get('VERCEL_ENV') or os.environ.get('AWS_LAMBDA_FUNCTION_NAME'))
+is_production = is_vercel or os.environ.get('FLASK_ENV') == 'production' or os.environ.get('ENV') == 'production'
+
+# SECRET_KEY Configuration
+# In production/Vercel: SECRET_KEY must be provided via environment variables, otherwise fail clearly.
+# In local development: use env var if present, or fall back to clearly dev-only insecure key.
+raw_secret = os.environ.get('SECRET_KEY', '').strip()
+if is_production:
+    if not raw_secret:
+        raise RuntimeError(
+            "CRITICAL SECURITY CONFIGURATION ERROR: SECRET_KEY environment variable is missing or empty. "
+            "A secure SECRET_KEY must be configured in your production/Vercel environment variables."
+        )
+    app.secret_key = raw_secret
+else:
+    app.secret_key = raw_secret if raw_secret else 'dev-only-insecure-secret-key-for-local-development'
+
+# Dynamic SESSION_COOKIE_SECURE:
+# Must be True in production/Vercel (HTTPS) so modern browsers persist the cookie.
+# Must be False on localhost (HTTP) so cookies work over non-SSL local dev servers.
+cookie_secure_override = os.environ.get('SESSION_COOKIE_SECURE')
+if cookie_secure_override is not None:
+    session_cookie_secure = cookie_secure_override.lower() in ('true', '1', 'yes')
+else:
+    session_cookie_secure = is_production
+
+app.config.update(
+    SECRET_KEY=app.secret_key,
+    SESSION_COOKIE_NAME='ironpulse_session',
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SECURE=session_cookie_secure,
+    SESSION_COOKIE_SAMESITE='Lax',
+    SESSION_COOKIE_DOMAIN=None,
+    PERMANENT_SESSION_LIFETIME=timedelta(days=7),
+    PREFERRED_URL_SCHEME='https' if is_production else 'http',
+)
 app.permanent_session_lifetime = timedelta(days=7)
 
 # Google OAuth 2.0 Configuration Endpoints
@@ -230,6 +267,7 @@ def load_logged_in_user():
         g.user = cursor.fetchone()
         conn.close()
         if g.user is None:
+            logger.warning(f"Session user_id={user_id} not found in database, clearing session")
             session.clear()
 
 def login_required(f):
