@@ -5,7 +5,6 @@ workout consistency rates, and prepares time-series chart data for Chart.js.
 """
 
 from datetime import date, datetime, timedelta
-import sqlite3
 import database
 
 def get_progress_dashboard_data(conn, user_id, user_profile):

@@ -18,7 +18,6 @@ Also handles specific questions like:
 
 from datetime import date, datetime, timedelta
 import re
-import sqlite3
 import database
 
 DISCLAIMER_TEXT = (

@@ -1,17 +1,58 @@
 import sqlite3
 import os
 import shutil
+import re
+import logging
 from datetime import date, timedelta
 from werkzeug.security import generate_password_hash
 
+logger = logging.getLogger("ironpulse.database")
+
+# Try importing modern psycopg 3
+try:
+    import psycopg
+    PSYCOPG_AVAILABLE = True
+except ImportError:
+    psycopg = None
+    PSYCOPG_AVAILABLE = False
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 SCHEMA_PATH = os.path.join(BASE_DIR, 'schema.sql')
+SCHEMA_PG_PATH = os.path.join(BASE_DIR, 'schema_pg.sql')
+
+# Tracks whether PostgreSQL schema has been verified/initialized in this process
+_pg_initialized = False
+
+
+def is_postgres_configured() -> bool:
+    """
+    Check if a PostgreSQL connection URL is configured in environment variables.
+    Checks DATABASE_URL (standard) and POSTGRES_URL (Vercel Postgres default).
+    Never logs or prints the URL value.
+    """
+    raw_url = os.environ.get('DATABASE_URL') or os.environ.get('POSTGRES_URL') or ''
+    clean_url = raw_url.strip()
+    return bool(clean_url.startswith(('postgres://', 'postgresql://')))
+
+
+def get_postgres_url() -> str:
+    """
+    Retrieves and normalizes the PostgreSQL connection URL.
+    Normalizes legacy 'postgres://' prefix to modern 'postgresql://'.
+    Never logs or exposes credentials.
+    """
+    raw_url = os.environ.get('DATABASE_URL') or os.environ.get('POSTGRES_URL') or ''
+    clean_url = raw_url.strip()
+    if clean_url.startswith('postgres://'):
+        clean_url = 'postgresql://' + clean_url[len('postgres://'):]
+    return clean_url
+
 
 def get_database_path():
     """
-    Resolves the SQLite database path.
+    Resolves the SQLite database path for local development.
     In Vercel serverless environment (detected via VERCEL env var or AWS_LAMBDA_FUNCTION_NAME),
-    copies or creates the database in writable /tmp to allow read-write operations.
+    copies or creates the database in writable /tmp to allow read-write operations ONLY if DATABASE_URL is NOT set.
     In local development, uses fitness_tracker.db in the project directory.
     Can be explicitly overridden via the DATABASE_PATH environment variable.
     """
@@ -19,11 +60,10 @@ def get_database_path():
     if configured_path:
         return configured_path
 
-    # If running on Vercel or serverless environment
-    if os.environ.get('VERCEL') or os.environ.get('AWS_LAMBDA_FUNCTION_NAME'):
+    # If running on Vercel without PostgreSQL DATABASE_URL configured
+    if not is_postgres_configured() and (os.environ.get('VERCEL') or os.environ.get('AWS_LAMBDA_FUNCTION_NAME') or os.environ.get('VERCEL_ENV')):
         tmp_db = '/tmp/fitness_tracker.db'
         repo_db = os.path.join(BASE_DIR, 'fitness_tracker.db')
-        # If tmp_db does not exist yet in this container instance
         if not os.path.exists(tmp_db):
             if os.path.exists(repo_db) and os.path.getsize(repo_db) > 0:
                 try:
@@ -34,10 +74,300 @@ def get_database_path():
 
     return os.path.join(BASE_DIR, 'fitness_tracker.db')
 
+
 DATABASE_PATH = get_database_path()
 
+
+# =============================================================================
+# COMPATIBILITY LAYER: DUAL-ACCESS ROW & SQL TRANSLATION
+# =============================================================================
+
+class CompatibleRow(dict):
+    """
+    Dual-access row wrapper that provides:
+    1. Integer indexing: row[0], row[1]
+    2. String key lookup: row['username'], row['id']
+    3. Case-insensitive column key access
+    4. dict(row), .keys(), .values(), .items(), len(row)
+    """
+    def __init__(self, keys, values):
+        super().__init__(zip(keys, values))
+        self._values = tuple(values)
+        self._keys = list(keys)
+        self._lower_map = {k.lower(): k for k in keys if isinstance(k, str)}
+
+    def __getitem__(self, key):
+        if isinstance(key, int):
+            return self._values[key]
+        if key in self:
+            return super().__getitem__(key)
+        if isinstance(key, str):
+            lower_key = key.lower()
+            if lower_key in self._lower_map:
+                return super().__getitem__(self._lower_map[lower_key])
+        return super().__getitem__(key)
+
+    def keys(self):
+        return self._keys
+
+    def values(self):
+        return self._values
+
+    def items(self):
+        return [(k, self[k]) for k in self._keys]
+
+    def __repr__(self):
+        return f"<CompatibleRow {dict(self.items())}>"
+
+
+def _replace_placeholders_outside_quotes(sql: str) -> str:
+    """Replaces SQLite '?' parameter placeholders with PostgreSQL '%s' outside quotes."""
+    out = []
+    in_single = False
+    in_double = False
+    escape = False
+    for ch in sql:
+        if ch == "'" and not in_double:
+            if not escape:
+                in_single = not in_single
+            out.append(ch)
+        elif ch == '"' and not in_single:
+            if not escape:
+                in_double = not in_double
+            out.append(ch)
+        elif ch == '?' and not in_single and not in_double:
+            out.append('%s')
+        else:
+            out.append(ch)
+    return "".join(out)
+
+
+def adapt_sql_for_postgres(sql: str) -> tuple[str, bool]:
+    """
+    Translates SQLite SQL query for PostgreSQL:
+    1. PRAGMA foreign_keys = ON -> safe no-op ("SELECT 1")
+    2. PRAGMA table_info(tbl) -> queries information_schema.columns
+    3. INSERT OR REPLACE INTO user_active_plans -> ON CONFLICT (user_id) DO UPDATE ...
+    4. Replaces ? placeholders with %s
+    5. Appends RETURNING id to INSERT statements lacking RETURNING clause
+    Returns: (adapted_sql, is_auto_returning_insert)
+    """
+    s = sql.strip()
+
+    # 1. PRAGMA foreign_keys = ON -> no-op
+    if re.match(r"^PRAGMA\s+foreign_keys\b", s, re.IGNORECASE):
+        return ("SELECT 1", False)
+
+    # 2. PRAGMA table_info(table_name) -> information_schema.columns
+    m_info = re.match(r"^PRAGMA\s+table_info\s*\(\s*['\"]?(\w+)['\"]?\s*\)", s, re.IGNORECASE)
+    if m_info:
+        tbl = m_info.group(1).lower()
+        adapted = (
+            f"SELECT ordinal_position as cid, column_name as name, data_type as type, "
+            f"CASE WHEN is_nullable = 'NO' THEN 1 ELSE 0 END as notnull, "
+            f"column_default as dflt_value, 0 as pk "
+            f"FROM information_schema.columns WHERE LOWER(table_name) = '{tbl}' "
+            f"ORDER BY ordinal_position"
+        )
+        return (adapted, False)
+
+    # 3. Translate INSERT OR REPLACE INTO user_active_plans
+    if re.match(r"^INSERT\s+OR\s+REPLACE\s+INTO\s+user_active_plans\b", s, re.IGNORECASE):
+        s = re.sub(
+            r"^INSERT\s+OR\s+REPLACE\s+INTO\s+user_active_plans\s*\(([^)]+)\)\s*VALUES\s*\(([^)]+)\)",
+            r"INSERT INTO user_active_plans (\1) VALUES (\2) ON CONFLICT (user_id) DO UPDATE SET plan_id = EXCLUDED.plan_id, started_at = EXCLUDED.started_at",
+            s,
+            flags=re.IGNORECASE
+        )
+
+    # Translate generic INSERT OR REPLACE INTO user_daily_schedules
+    if re.match(r"^INSERT\s+OR\s+REPLACE\s+INTO\s+user_daily_schedules\b", s, re.IGNORECASE):
+        s = re.sub(
+            r"^INSERT\s+OR\s+REPLACE\s+INTO\s+user_daily_schedules\s*\(([^)]+)\)\s*VALUES\s*\(([^)]+)\)",
+            r"INSERT INTO user_daily_schedules (\1) VALUES (\2) ON CONFLICT (user_id, date) DO UPDATE SET workout_title = EXCLUDED.workout_title, notes = EXCLUDED.notes",
+            s,
+            flags=re.IGNORECASE
+        )
+
+    # 4. Translate SQLite AUTOINCREMENT in DDL if present
+    if "AUTOINCREMENT" in s.upper():
+        s = re.sub(
+            r"INTEGER\s+PRIMARY\s+KEY\s+AUTOINCREMENT",
+            "INTEGER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY",
+            s,
+            flags=re.IGNORECASE
+        )
+
+    # 5. Replace ? parameter placeholders with %s
+    s = _replace_placeholders_outside_quotes(s)
+
+    # 6. Handle lastrowid via RETURNING id on INSERT
+    is_auto_returning = False
+    if re.match(r"^INSERT\s+INTO\b", s, re.IGNORECASE):
+        if not re.search(r"\bRETURNING\b", s, re.IGNORECASE):
+            s = s.rstrip(';') + " RETURNING id"
+            is_auto_returning = True
+
+    return (s, is_auto_returning)
+
+
+class PostgresCursorWrapper:
+    """
+    Wraps a Psycopg 3 cursor to provide SQLite-compatible semantics:
+    - Automatically adapts query syntax (? -> %s, PRAGMA, UPSERT)
+    - Emulates cursor.lastrowid via RETURNING id
+    - Returns CompatibleRow objects from fetchone/fetchall/fetchmany
+    """
+    def __init__(self, raw_cursor):
+        self._cur = raw_cursor
+        self.lastrowid = None
+        self._closed = False
+
+    def execute(self, query, params=None):
+        sql_adapted, is_auto_returning = adapt_sql_for_postgres(query)
+        if sql_adapted == "SELECT 1" and query.strip().upper().startswith("PRAGMA FOREIGN_KEYS"):
+            return self
+
+        if params is not None:
+            # Psycopg expects tuple or list
+            self._cur.execute(sql_adapted, tuple(params) if not isinstance(params, (tuple, list, dict)) else params)
+        else:
+            self._cur.execute(sql_adapted)
+
+        if is_auto_returning:
+            row = self._cur.fetchone()
+            if row:
+                self.lastrowid = row[0]
+
+        return self
+
+    def executemany(self, query, params_seq):
+        sql_adapted, _ = adapt_sql_for_postgres(query)
+        self._cur.executemany(sql_adapted, params_seq)
+        return self
+
+    def fetchone(self):
+        row = self._cur.fetchone()
+        if row is None:
+            return None
+        col_names = [desc[0] for desc in self._cur.description]
+        return CompatibleRow(col_names, row)
+
+    def fetchall(self):
+        rows = self._cur.fetchall()
+        if not rows:
+            return []
+        col_names = [desc[0] for desc in self._cur.description]
+        return [CompatibleRow(col_names, r) for r in rows]
+
+    def fetchmany(self, size=None):
+        rows = self._cur.fetchmany(size) if size is not None else self._cur.fetchmany()
+        if not rows:
+            return []
+        col_names = [desc[0] for desc in self._cur.description]
+        return [CompatibleRow(col_names, r) for r in rows]
+
+    def __iter__(self):
+        if not self._cur.description:
+            return iter([])
+        col_names = [desc[0] for desc in self._cur.description]
+        for row in self._cur:
+            yield CompatibleRow(col_names, row)
+
+    @property
+    def rowcount(self):
+        return self._cur.rowcount
+
+    @property
+    def description(self):
+        return self._cur.description
+
+    def close(self):
+        if not self._closed:
+            self._cur.close()
+            self._closed = True
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+
+
+class PostgresConnectionWrapper:
+    """
+    Wraps a Psycopg 3 connection to provide SQLite-compatible semantics:
+    - conn.cursor() returns PostgresCursorWrapper
+    - conn.execute(...) shortcut
+    - conn.executescript(script) for multi-statement DDL
+    - conn.commit(), conn.rollback(), conn.close()
+    """
+    def __init__(self, raw_conn):
+        self._conn = raw_conn
+        self.row_factory = None  # CompatibleRow is handled directly by cursor
+
+    def cursor(self):
+        return PostgresCursorWrapper(self._conn.cursor())
+
+    def execute(self, query, params=None):
+        cur = self.cursor()
+        cur.execute(query, params)
+        return cur
+
+    def executescript(self, script):
+        with self._conn.cursor() as cur:
+            cur.execute(script)
+        self._conn.commit()
+
+    def commit(self):
+        self._conn.commit()
+
+    def rollback(self):
+        self._conn.rollback()
+
+    def close(self):
+        self._conn.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if exc_type is not None:
+            self.rollback()
+        self.close()
+
+
+# =============================================================================
+# DATABASE CONNECTION & INITIALIZATION
+# =============================================================================
+
 def get_db():
-    """Establish connection to SQLite database with row factory for dictionary-like access."""
+    """
+    Establishes connection to the database.
+    - If DATABASE_URL / POSTGRES_URL is configured: connects to PostgreSQL via Psycopg 3.
+    - If DATABASE_URL is not configured: connects to SQLite (local fitness_tracker.db).
+    Rest of the application calls get_db() without needing to know backend dialect.
+    """
+    global _pg_initialized
+
+    if is_postgres_configured():
+        if not PSYCOPG_AVAILABLE:
+            raise RuntimeError(
+                "CRITICAL CONFIGURATION ERROR: DATABASE_URL is set for PostgreSQL, "
+                "but psycopg is not installed. Please install psycopg[binary]."
+            )
+        pg_url = get_postgres_url()
+        raw_conn = psycopg.connect(pg_url)
+        conn = PostgresConnectionWrapper(raw_conn)
+
+        # Ensure PostgreSQL tables and seed data exist on initial run
+        if not _pg_initialized:
+            ensure_postgres_initialized(conn)
+            _pg_initialized = True
+
+        return conn
+
+    # ------------------ SQLite Local Fallback ------------------
     db_path = get_database_path()
     db_existed = os.path.exists(db_path) and os.path.getsize(db_path) > 0
 
@@ -62,10 +392,69 @@ def get_db():
                 import ai_assistant
                 ai_assistant.init_chat_tables(conn)
                 seed_demo_user_and_data(conn)
+        except Exception as e:
+            logger.error(f"Error during SQLite database initialization: {e}", exc_info=True)
+    else:
+        # Check if users table is empty and seed demo user if needed
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM users")
+            if cursor.fetchone()[0] == 0:
+                seed_demo_user_and_data(conn)
         except Exception:
             pass
 
     return conn
+
+
+def ensure_postgres_initialized(conn: PostgresConnectionWrapper):
+    """
+    Checks if PostgreSQL schema is initialized; if tables are missing,
+    executes schema_pg.sql and populates baseline catalog & demo data.
+    Logs errors clearly without silently rolling back.
+    """
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'users'")
+        table_exists = cursor.fetchone() is not None
+
+        if not table_exists:
+            logger.info("Initializing PostgreSQL database schema from schema_pg.sql...")
+            if not os.path.exists(SCHEMA_PG_PATH):
+                raise FileNotFoundError(f"PostgreSQL schema file not found at {SCHEMA_PG_PATH}")
+
+            with open(SCHEMA_PG_PATH, 'r', encoding='utf-8') as f:
+                ddl = f.read()
+
+            conn.executescript(ddl)
+            logger.info("PostgreSQL schema created successfully. Seeding initial data...")
+
+            # Run standard catalog seeders
+            import exercise_catalog
+            exercise_catalog.seed_exercise_catalog(conn)
+
+            import workout_manager
+            workout_manager.get_or_create_default_plans(conn)
+
+            import nutrition_manager
+            nutrition_manager.init_food_library(conn)
+
+            import ai_assistant
+            ai_assistant.init_chat_tables(conn)
+
+            seed_demo_user_and_data(conn)
+            logger.info("PostgreSQL catalog and demo user seeded successfully.")
+        else:
+            # Check if demo user exists in PostgreSQL, seed if users table is empty
+            cursor.execute("SELECT COUNT(*) FROM users")
+            if cursor.fetchone()[0] == 0:
+                seed_demo_user_and_data(conn)
+
+    except Exception as e:
+        logger.error(f"CRITICAL ERROR during PostgreSQL database initialization: {e}", exc_info=True)
+        conn.rollback()
+        raise
+
 
 def migrate_tables(conn):
     """Ensures existing tables have all columns and creates any new tables."""
@@ -99,7 +488,9 @@ def migrate_tables(conn):
         ("rest_seconds", "INTEGER DEFAULT 90"),
         ("recommended_sets", "TEXT DEFAULT '3-4 sets'"),
         ("recommended_reps", "TEXT DEFAULT '8-12 reps'"),
-        ("common_mistakes", "TEXT DEFAULT 'Rushing the eccentric tempo, incomplete range of motion.'")
+        ("common_mistakes", "TEXT"),
+        ("youtube_id", "TEXT"),
+        ("youtube_url", "TEXT")
     ]
     for col_name, col_def in needed_ex_cols:
         if col_name not in existing_ex_cols:
@@ -111,7 +502,8 @@ def migrate_tables(conn):
     needed_w_cols = [
         ("status", "TEXT DEFAULT 'completed'"),
         ("target_muscle_group", "TEXT DEFAULT 'General'"),
-        ("completion_rate", "INTEGER DEFAULT 100")
+        ("completion_rate", "INTEGER DEFAULT 100"),
+        ("intensity_rating", "INTEGER DEFAULT 8")
     ]
     for col_name, col_def in needed_w_cols:
         if col_name not in existing_w_cols:
@@ -121,9 +513,8 @@ def migrate_tables(conn):
     cursor.execute("PRAGMA table_info(workout_exercises)")
     existing_we_cols = [row[1] for row in cursor.fetchall()]
     needed_we_cols = [
-        ("rest_seconds", "INTEGER DEFAULT 90"),
         ("completed", "INTEGER DEFAULT 1"),
-        ("order_idx", "INTEGER DEFAULT 1")
+        ("notes", "TEXT")
     ]
     for col_name, col_def in needed_we_cols:
         if col_name not in existing_we_cols:
@@ -132,21 +523,30 @@ def migrate_tables(conn):
     # 5. Progress logs table migration
     cursor.execute("PRAGMA table_info(progress_logs)")
     existing_p_cols = [row[1] for row in cursor.fetchall()]
-    if "thighs_cm" not in existing_p_cols:
-        cursor.execute("ALTER TABLE progress_logs ADD COLUMN thighs_cm REAL")
-
-    # 6. Exercises table migration for YouTube references
-    cursor.execute("PRAGMA table_info(exercises)")
-    existing_ex_cols = [row[1] for row in cursor.fetchall()]
-    needed_ex_cols = [
-        ("youtube_id", "TEXT"),
-        ("youtube_url", "TEXT")
+    needed_p_cols = [
+        ("body_fat_pct", "REAL"),
+        ("chest_cm", "REAL"),
+        ("arms_cm", "REAL"),
+        ("waist_cm", "REAL"),
+        ("thighs_cm", "REAL"),
+        ("notes", "TEXT")
     ]
-    for col_name, col_def in needed_ex_cols:
-        if col_name not in existing_ex_cols:
-            cursor.execute(f"ALTER TABLE exercises ADD COLUMN {col_name} {col_def}")
+    for col_name, col_def in needed_p_cols:
+        if col_name not in existing_p_cols:
+            cursor.execute(f"ALTER TABLE progress_logs ADD COLUMN {col_name} {col_def}")
 
-    # 7. Nutrition logs table migration for camera tracking & estimates
+    # 6. Workout plans table migration
+    cursor.execute("PRAGMA table_info(workout_plans)")
+    existing_wp_cols = [row[1] for row in cursor.fetchall()]
+    needed_wp_cols = [
+        ("target_muscle_group", "TEXT DEFAULT 'All'"),
+        ("is_default", "INTEGER DEFAULT 0")
+    ]
+    for col_name, col_def in needed_wp_cols:
+        if col_name not in existing_wp_cols:
+            cursor.execute(f"ALTER TABLE workout_plans ADD COLUMN {col_name} {col_def}")
+
+    # 7. Nutrition logs table migration
     cursor.execute("PRAGMA table_info(nutrition_logs)")
     existing_n_cols = [row[1] for row in cursor.fetchall()]
     needed_n_cols = [
@@ -187,9 +587,15 @@ def migrate_tables(conn):
 
     conn.commit()
 
+
 def init_db():
     """Initializes tables and populates seed data if empty."""
     conn = get_db()
+    if is_postgres_configured():
+        ensure_postgres_initialized(conn)
+        conn.close()
+        return
+
     with open(SCHEMA_PATH, 'r', encoding='utf-8') as f:
         conn.executescript(f.read())
     conn.commit()
@@ -222,6 +628,7 @@ def init_db():
 
     conn.close()
 
+
 def seed_exercises(conn):
     """Seeds comprehensive exercises across Chest, Back, Shoulders, Biceps, Triceps, Legs, Core."""
     exercises = [
@@ -249,116 +656,116 @@ def seed_exercises(conn):
 
         # Back
         ("Barbell Deadlift", "Back", "Erector Spinae, Latissimus Dorsi, Traps, Glutes, Hamstrings", "Barbell", "Advanced",
-         "The king of posterior chain exercises for full-body strength and back thickness.",
-         "Stand with mid-foot under the bar. Hinge hips back, grip bar firmly, engage lats, and drive the floor away to stand upright.",
-         4, 5, 150),
-        ("Pull-Ups", "Back", "Latissimus Dorsi, Rhomboids, Biceps, Core", "Bodyweight", "Intermediate",
-         "Classic bodyweight movement that develops the coveted V-taper lat width.",
-         "Grip pull-up bar slightly wider than shoulder-width. Drive elbows down toward your hips and pull chest to bar.",
+         "The king of posterior chain movements for full-body power and dense back thickness.",
+         "Stand with mid-foot under barbell. Hinge at hips, grip bar firmly outside knees. Brace core, engage lats, drive hips forward to stand tall.",
+         4, 5, 120),
+        ("Pull-Ups", "Back", "Latissimus Dorsi, Teres Major, Biceps Brachii", "Bodyweight", "Intermediate",
+         "The gold standard vertical pull for building wide V-taper lats.",
+         "Pronated grip slightly wider than shoulders. Pull chest towards the bar by driving elbows down and back. Lower with full control.",
          4, 8, 90),
-        ("Bent-Over Barbell Row", "Back", "Upper Back, Lats, Rhomboids, Rear Delts", "Barbell", "Intermediate",
-         "Builds substantial mid-back density and lat thickness.",
-         "Hinge at the hips at a 45-degree angle with a neutral spine. Pull bar to upper abdomen, squeezing shoulder blades together.",
+        ("Barbell Bent-Over Row", "Back", "Latissimus Dorsi, Rhomboids, Middle Trapezius", "Barbell", "Intermediate",
+         "Heavy horizontal pulling compound for upper and mid-back density.",
+         "Hinge hips to 45 degrees, spine neutral. Pull barbell into lower ribs/navel driving through elbows. Squeeze scapulae at top.",
          4, 8, 90),
-        ("Seated Cable Row", "Back", "Mid-Back, Lower Lats, Rhomboids", "Cable", "Beginner",
-         "Great horizontal pulling exercise for scapular retraction and mid-back control.",
-         "Sit upright with knees slightly bent. Pull handle into lower abdomen while keeping spine neutral and shoulders pinned back.",
-         3, 10, 75),
-        ("Lat Pulldown", "Back", "Latissimus Dorsi, Teres Major, Biceps", "Cable", "Beginner",
-         "Vertical pulling alternative allowing controlled overload for wide lats.",
-         "Grip wide bar, lean slightly back. Pull bar downward to upper chest, leading with the elbows.",
-         3, 10, 75),
+        ("Lat Pulldown", "Back", "Latissimus Dorsi, Upper Back, Biceps", "Cable", "Beginner",
+         "Controlled vertical pulling isolation to master lat recruitment without fatigue.",
+         "Grip wide bar, sit with thighs secure under pads. Lean torso slightly back (~10 deg) and draw bar smoothly to upper clavicles.",
+         3, 12, 60),
+        ("Seated Cable Row", "Back", "Rhomboids, Lats, Lower Trapezius", "Cable", "Beginner",
+         "Continuous tension horizontal pulling for posture and mid-back thickness.",
+         "Sit upright with knees slightly bent. Pull handle into stomach while retracting shoulder blades. Control eccentric stretch.",
+         3, 12, 60),
 
         # Shoulders
-        ("Overhead Barbell Press (OHP)", "Shoulders", "Anterior & Lateral Deltoids, Triceps, Traps", "Barbell", "Intermediate",
-         "Strict vertical pressing movement for boulder shoulders and overhead strength.",
-         "Hold bar at shoulder level. Brace core and glutes, press bar vertically directly overhead, locking elbows out safely.",
-         4, 8, 120),
-        ("Dumbbell Lateral Raise", "Shoulders", "Lateral Deltoids (Side Delts)", "Dumbbell", "Beginner",
-         "Crucial isolation movement for widening the shoulders and creating broad capped delts.",
-         "Hold dumbbells at sides. Raise arms out to the sides leading with elbows until parallel to floor, lower slowly.",
-         4, 12, 60),
-        ("Face Pulls", "Shoulders", "Rear Deltoids, Rotator Cuff, Upper Traps", "Cable", "Beginner",
-         "Essential for shoulder health, posture alignment, and rear deltoid fullness.",
-         "Attach rope to high pulley. Pull rope toward bridge of nose while externally rotating hands backward.",
+        ("Overhead Barbell Press", "Shoulders", "Anterior & Lateral Deltoid, Triceps, Upper Chest", "Barbell", "Intermediate",
+         "The pinnacle compound movement for complete vertical pushing power and boulder shoulders.",
+         "Bar resting across front delts. Brace core and glutes. Press bar straight up, tilting head back slightly, lock out overhead.",
+         4, 6, 90),
+        ("Dumbbell Lateral Raise", "Shoulders", "Lateral Deltoid (Side Delt)", "Dumbbell", "Beginner",
+         "Essential isolation movement for capped side delts and upper-body width.",
+         "Stand with slight forward torso lean. Raise dumbbells out to sides until elbows reach shoulder height. Pour pitch slightly at peak.",
+         4, 15, 60),
+        ("Face Pulls", "Shoulders", "Posterior Deltoid, Infraspinatus, Traps, Rhomboids", "Cable", "Beginner",
+         "Crucial bulletproofing movement for rear delts and rotator cuff health.",
+         "Rope attachment at eye level. Pull rope towards bridge of nose while externally rotating hands back and apart.",
          3, 15, 60),
-        ("Arnold Press", "Shoulders", "Anterior, Lateral & Posterior Deltoids", "Dumbbell", "Intermediate",
-         "Rotational overhead dumbbell press hitting all three deltoid heads through a full arc.",
-         "Start with palms facing you. Rotate wrists outward as you press overhead until palms face forward at top.",
-         3, 10, 90),
-        ("Dumbbell Rear Delt Fly", "Shoulders", "Posterior Deltoids, Rhomboids", "Dumbbell", "Beginner",
-         "Direct isolation movement for complete 3D shoulder shape and upper back balance.",
-         "Bend forward at hips. Raise dumbbells outward to the side with pinkies slightly higher, squeezing rear delts.",
-         3, 12, 60),
+        ("Dumbbell Arnold Press", "Shoulders", "Anterior & Lateral Delts, Triceps", "Dumbbell", "Intermediate",
+         "Dynamic pressing motion taking deltoids through full rotational range of motion.",
+         "Start dumbbells in front of chest palms facing in. Press upward while rotating palms forward at top lockout.",
+         3, 10, 75),
 
         # Biceps
-        ("Barbell Bicep Curl", "Biceps", "Biceps Brachii, Brachialis", "Barbell", "Beginner",
-         "The cornerstone mass builder for arm circumference and peak bicep recruitment.",
-         "Stand tall with shoulders pinned. Curl barbell upwards toward upper chest without swinging elbows forward.",
-         3, 10, 60),
-        ("Incline Dumbbell Curl", "Biceps", "Long Head of Biceps (Bicep Peak)", "Dumbbell", "Intermediate",
-         "Provides an intense stretch on the long head of the bicep for peak development.",
-         "Sit on an incline bench at 60 degrees. Let arms hang back and curl dumbbells up with full supination.",
-         3, 10, 60),
-        ("Hammer Curls", "Biceps", "Brachialis, Brachioradialis, Biceps", "Dumbbell", "Beginner",
-         "Develops arm thickness, pushing the bicep up while forging strong forearms.",
-         "Hold dumbbells with neutral palms-facing-in grip. Curl upward strictly without rotating wrists.",
+        ("Barbell Bicep Curl", "Biceps", "Biceps Brachii (Short & Long Head), Brachialis", "Barbell", "Beginner",
+         "Classic mass-builder for heavy loading and bicep peak development.",
+         "Shoulder-width underhand grip. Pin elbows to sides, curl barbell up smoothly contracting biceps. Lower under full control.",
+         4, 10, 60),
+        ("Dumbbell Incline Curl", "Biceps", "Biceps Brachii Long Head (Outer Head Peak)", "Dumbbell", "Intermediate",
+         "Deep stretch isolation emphasizing the outer long head for a taller bicep peak.",
+         "Bench set to 45-60 degrees. Let arms hang vertically, curl dumbbells up supinating wrists at top for maximum contraction.",
          3, 12, 60),
-        ("Cable Preacher Curl", "Biceps", "Short Head Bicep Peak, Inner Biceps", "Cable", "Intermediate",
-         "Isolates the bicep apex with continuous mechanical cable tension.",
-         "Rest upper arms on preacher pad. Curl bar toward forehead, pausing 1 second at maximum contraction.",
+        ("Hammer Curl", "Biceps", "Brachialis, Brachioradialis, Forearms", "Dumbbell", "Beginner",
+         "Neutral grip curl targeting the muscle beneath the bicep to push the arm wider.",
+         "Neutral grip (palms facing each other). Curl dumbbells upward keeping wrists rigid. Squeeze forearms and brachialis hard.",
+         3, 12, 60),
+        ("Preacher Curl", "Biceps", "Biceps Brachii Short Head (Inner Head Thickness)", "Barbell", "Intermediate",
+         "Strict isolation preventing shoulder momentum for concentrated bicep tension.",
+         "Rest upper arms firmly on preacher pad. Curl EZ-bar or barbell upward without lifting elbows off pad.",
          3, 10, 60),
 
         # Triceps
-        ("Skull Crushers (Lying Triceps Extension)", "Triceps", "Triceps Brachii (All 3 Heads)", "Barbell", "Intermediate",
-         "Direct tricep developer targeting long and lateral heads for horseshoe triceps.",
-         "Lie on flat bench with EZ bar overhead. Lower bar slowly toward forehead by bending at elbows, press back up.",
-         3, 10, 90),
-        ("Tricep Rope Pushdown", "Triceps", "Lateral & Medial Tricep Heads", "Cable", "Beginner",
-         "Controlled isolation exercise for constant tricep burnout.",
-         "Use rope attachment. Pin elbows to sides and push downward, flaring rope slightly at bottom.",
+        ("Tricep Pushdown (Cable Rope)", "Triceps", "Lateral & Medial Tricep Head", "Cable", "Beginner",
+         "Fundamental isolation movement for horseshoe tricep definition.",
+         "Attach rope to high pulley. Keep upper arms glued to sides, push hands down and spread rope apart at bottom lockout.",
          4, 12, 60),
-        ("Overhead Dumbbell Tricep Extension", "Triceps", "Long Head of Triceps", "Dumbbell", "Beginner",
-         "Maximum stretch on the largest head of the tricep for arm size.",
-         "Hold single dumbbell overhead with both hands. Lower behind head bending elbows, extend upward to lockout.",
+        ("Skull Crushers (Lying Triceps Extension)", "Triceps", "Long Head Triceps", "Barbell", "Intermediate",
+         "Overhead stretch extension key for maximal long-head tricep size and arm girth.",
+         "Lie on flat bench with EZ-bar above chest. Bend elbows to lower bar towards forehead/behind head, extend back to lockout.",
+         3, 10, 75),
+        ("Overhead Dumbbell Tricep Extension", "Triceps", "Long Head Triceps", "Dumbbell", "Intermediate",
+         "Deep vertical stretch isolating the tricep long head throughout full stretch.",
+         "Hold heavy dumbbell overhead with both hands forming a diamond grip. Lower dumbbell behind neck, extend fully upward.",
          3, 12, 60),
-        ("Bench Tricep Dips", "Triceps", "Triceps Brachii, Anterior Deltoids", "Bodyweight", "Beginner",
-         "Effective bodyweight tricep burner accessible anywhere.",
-         "Hands on edge of bench behind back. Lower hips until elbows hit 90 degrees, press up through palms.",
-         3, 12, 60),
+        ("Bench Tricep Dips", "Triceps", "Triceps Brachii, Anterior Delts", "Bodyweight", "Beginner",
+         "Accessible compound bodyweight exercise for high-rep pump and tricep endurance.",
+         "Hands behind back on edge of bench, legs extended forward. Lower hips towards floor bending elbows to 90 degrees, press up.",
+         3, 15, 60),
 
         # Legs
-        ("Barbell Back Squat", "Legs", "Quadriceps, Glutes, Adductors, Core", "Barbell", "Advanced",
-         "The premier lower body compound builder for leg mass, power, and athletic performance.",
-         "Rest bar across upper traps. Break at hips and knees simultaneously, descend until thighs are parallel or lower, drive up.",
+        ("Barbell Back Squat", "Legs", "Quadriceps, Gluteus Maximus, Adductors, Core", "Barbell", "Intermediate",
+         "The indisputable foundational movement for lower-body power and quad hypertrophy.",
+         "Bar placed on upper traps. Feet shoulder-width apart, toes flared slightly. Break at hips and knees simultaneously, descend below parallel, drive up explosively.",
          4, 8, 120),
         ("Romanian Deadlift (RDL)", "Legs", "Hamstrings, Gluteus Maximus, Lower Back", "Barbell", "Intermediate",
-         "Superior eccentric movement for hamstring hypertrophy and hip hinge mastery.",
-         "Keep slight bend in knees. Push hips back as far as possible while lowering the bar along your shins until hamstrings stretch.",
-         3, 10, 90),
+         "Premier hip-hinge exercise for lengthening hamstring mass and strengthening hips.",
+         "Hold bar with overhand grip. Soft bend in knees, push hips backward maintaining flat back until deep hamstring stretch. Squeeze glutes forward to stand.",
+         4, 10, 90),
         ("Leg Press", "Legs", "Quadriceps, Glutes", "Machine", "Beginner",
-         "Allows heavy quad loading with reduced lower back spinal compression.",
-         "Position feet shoulder-width on platform. Lower sled with control until knees reach 90 degrees, press without locking knees.",
-         4, 12, 90),
-        ("Walking Dumbbell Lunges", "Legs", "Quadriceps, Glutes, Hamstrings, Calves", "Dumbbell", "Intermediate",
-         "Unilateral leg developer improving muscular balance and quad sweep.",
-         "Step forward into a deep lunge with back knee grazing floor. Push through front heel to step into next stride.",
+         "High-volume machine compound allowing safe, heavy quad overload without spinal loading.",
+         "Feet shoulder-width on carriage platform. Release safety handles, lower weight until knees are at 90 degrees, press through mid-foot without locking knees.",
          3, 12, 90),
+        ("Lying Leg Curl", "Legs", "Hamstrings (Biceps Femoris, Semitendinosus)", "Machine", "Beginner",
+         "Direct knee-flexion isolation targeting the posterior leg sweep.",
+         "Lie face down on machine with pad against lower calves. Curl legs upward towards glutes, hold peak squeeze for 1 second, lower smoothly.",
+         3, 12, 60),
         ("Standing Calf Raise", "Legs", "Gastrocnemius, Soleus", "Machine", "Beginner",
-         "Targets lower leg definition and explosive ankle flexion.",
-         "Balls of feet on edge. Lower heels for a deep stretch, then elevate up onto toes and pause for 1 second.",
+         "Straight-knee calf exercise delivering full vertical ankle flexion overload.",
+         "Pads on shoulders, balls of feet on step edge. Lower heels down for deep stretch, rise onto balls of feet contracting calves hard.",
          4, 15, 60),
 
-        # Core
-        ("Hanging Leg Raise", "Core", "Rectus Abdominis (Lower Abs), Hip Flexors", "Bodyweight", "Intermediate",
-         "High-intensity core builder for sculpted abdominal definition.",
-         "Hang from pull-up bar. Without swinging, lift knees or straight legs up until thighs reach horizontal or touch chest.",
+        # Core / Abs
+        ("Hanging Leg Raise", "Core", "Rectus Abdominis (Lower Region), Hip Flexors, Obliques", "Bodyweight", "Intermediate",
+         "Dynamic calisthenic core movement demanding pelvic rotation and abdominal contraction.",
+         "Hang from pull-up bar with overhand grip. Without swinging, lift knees or straight legs up towards chest by curling pelvis up.",
          3, 12, 60),
-        ("Cable Woodchoppers", "Core", "Internal & External Obliques, Transverse Abdominis", "Cable", "Beginner",
-         "Rotational abdominal power exercise for a tight, powerful athletic midsection.",
-         "Set pulley high. Pull diagonally across torso down toward opposite knee while engaging core.",
+        ("Cable Woodchopper", "Core", "Internal & External Obliques, Transverse Abdominis", "Cable", "Beginner",
+         "Rotational athletic movement forging rotational power and defined waistline.",
+         "Set pulley to high position. Grip handle with both hands, pivot back foot and chop diagonally down across torso towards opposite hip.",
          3, 12, 60),
-        ("Abdominal Crunch Machine", "Core", "Upper Rectus Abdominis", "Machine", "Beginner",
+        ("Ab Roller Wheel", "Core", "Entire Rectus Abdominis, Transverse Abdominis, Lats", "Bodyweight", "Advanced",
+         "Elite anti-extension core builder producing maximal eccentric tension.",
+         "Kneel with wheel under shoulders. Roll forward extending arms and hips until torso is just above floor, pull back squeezing abs.",
+         3, 10, 75),
+        ("Cable Crunch", "Core", "Rectus Abdominis", "Cable", "Beginner",
          "Direct weighted abdominal loading to build defined six-pack brick density.",
          "Adjust seat so chest pad contacts upper torso. Crunch forward flexing spine, hold peak contraction for 1 second.",
          3, 15, 60)
@@ -383,38 +790,50 @@ def seed_exercises(conn):
             """, (name, cat, muscles, equip, diff, desc, instr, sets, reps, rest_sec))
     conn.commit()
 
+
 def seed_demo_user_and_data(conn):
+    """
+    Seeds default demo athlete ('alex_pulse') and initial workout, nutrition, and progress records.
+    Safely commits demo user first and handles exercise lookups robustly.
+    """
     demo_password = generate_password_hash("fitness123")
     cursor = conn.cursor()
-    cursor.execute("""
-        INSERT INTO users (
-            username, email, password_hash, full_name, age, gender,
-            height_cm, weight_kg, experience_level, fitness_goal,
-            training_days_per_week, available_equipment, dietary_preference,
-            target_weight_kg, daily_calorie_target, daily_protein_target,
-            daily_carbs_target, daily_fats_target
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    """, (
-        'alex_pulse',
-        'alex@ironpulse.fit',
-        demo_password,
-        'Alex Mercer',
-        26,
-        'Male',
-        181.0,
-        78.5,
-        'Intermediate (1-3 Years)',
-        'Muscle Hypertrophy & Strength',
-        5,
-        'Full Commercial Gym',
-        'High Protein Omnivore',
-        82.0,
-        2850,
-        185,
-        320,
-        75
-    ))
-    user_id = cursor.lastrowid
+
+    cursor.execute("SELECT id FROM users WHERE username = 'alex_pulse'")
+    existing_demo = cursor.fetchone()
+    if existing_demo:
+        user_id = existing_demo[0]
+    else:
+        cursor.execute("""
+            INSERT INTO users (
+                username, email, password_hash, full_name, age, gender,
+                height_cm, weight_kg, experience_level, fitness_goal,
+                training_days_per_week, available_equipment, dietary_preference,
+                target_weight_kg, daily_calorie_target, daily_protein_target,
+                daily_carbs_target, daily_fats_target
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            'alex_pulse',
+            'alex@ironpulse.fit',
+            demo_password,
+            'Alex Mercer',
+            26,
+            'Male',
+            181.0,
+            78.5,
+            'Intermediate (1-3 Years)',
+            'Muscle Hypertrophy & Strength',
+            5,
+            'Full Commercial Gym',
+            'High Protein Omnivore',
+            82.0,
+            2850,
+            185,
+            320,
+            75
+        ))
+        conn.commit()
+        user_id = cursor.lastrowid
 
     today = date.today()
     yesterday = today - timedelta(days=1)
@@ -437,29 +856,32 @@ def seed_demo_user_and_data(conn):
 
         if "Push" in w[1]:
             cursor.execute("SELECT id FROM exercises WHERE name = 'Barbell Bench Press'")
-            ex1 = cursor.fetchone()[0]
+            r1 = cursor.fetchone()
             cursor.execute("SELECT id FROM exercises WHERE name = 'Incline Dumbbell Press'")
-            ex2 = cursor.fetchone()[0]
-            cursor.execute("SELECT id FROM exercises WHERE name = 'Tricep Rope Pushdown'")
-            ex3 = cursor.fetchone()[0]
+            r2 = cursor.fetchone()
+            cursor.execute("SELECT id FROM exercises WHERE name = 'Tricep Pushdown (Cable Rope)' OR name LIKE '%Tricep%Pushdown%'")
+            r3 = cursor.fetchone()
 
-            cursor.execute("INSERT INTO workout_exercises (workout_id, exercise_id, sets, reps, weight_kg, rest_seconds, completed, notes) VALUES (?, ?, 4, 8, 90.0, 90, 1, 'RPE 8.5')", (w_id, ex1))
-            cursor.execute("INSERT INTO workout_exercises (workout_id, exercise_id, sets, reps, weight_kg, rest_seconds, completed, notes) VALUES (?, ?, 3, 10, 32.0, 90, 1, 'Clean stretch')", (w_id, ex2))
-            cursor.execute("INSERT INTO workout_exercises (workout_id, exercise_id, sets, reps, weight_kg, rest_seconds, completed, notes) VALUES (?, ?, 4, 12, 35.0, 60, 1, 'Drop set on last set')", (w_id, ex3))
+            if r1 and r2 and r3:
+                cursor.execute("INSERT INTO workout_exercises (workout_id, exercise_id, sets, reps, weight_kg, rest_seconds, completed, notes) VALUES (?, ?, 4, 8, 90.0, 90, 1, 'RPE 8.5')", (w_id, r1[0]))
+                cursor.execute("INSERT INTO workout_exercises (workout_id, exercise_id, sets, reps, weight_kg, rest_seconds, completed, notes) VALUES (?, ?, 3, 10, 32.0, 90, 1, 'Clean stretch')", (w_id, r2[0]))
+                cursor.execute("INSERT INTO workout_exercises (workout_id, exercise_id, sets, reps, weight_kg, rest_seconds, completed, notes) VALUES (?, ?, 4, 12, 35.0, 60, 1, 'Drop set on last set')", (w_id, r3[0]))
         elif "Pull" in w[1]:
             cursor.execute("SELECT id FROM exercises WHERE name = 'Barbell Deadlift'")
-            ex1 = cursor.fetchone()[0]
+            r1 = cursor.fetchone()
             cursor.execute("SELECT id FROM exercises WHERE name = 'Barbell Bicep Curl'")
-            ex2 = cursor.fetchone()[0]
-            cursor.execute("INSERT INTO workout_exercises (workout_id, exercise_id, sets, reps, weight_kg, rest_seconds, completed, notes) VALUES (?, ?, 4, 5, 150.0, 150, 1, 'Conventional stance')", (w_id, ex1))
-            cursor.execute("INSERT INTO workout_exercises (workout_id, exercise_id, sets, reps, weight_kg, rest_seconds, completed, notes) VALUES (?, ?, 3, 12, 35.0, 60, 1, 'Strict form')", (w_id, ex2))
+            r2 = cursor.fetchone()
+            if r1 and r2:
+                cursor.execute("INSERT INTO workout_exercises (workout_id, exercise_id, sets, reps, weight_kg, rest_seconds, completed, notes) VALUES (?, ?, 4, 5, 150.0, 150, 1, 'Conventional stance')", (w_id, r1[0]))
+                cursor.execute("INSERT INTO workout_exercises (workout_id, exercise_id, sets, reps, weight_kg, rest_seconds, completed, notes) VALUES (?, ?, 3, 12, 35.0, 60, 1, 'Strict form')", (w_id, r2[0]))
         elif "Leg" in w[1]:
             cursor.execute("SELECT id FROM exercises WHERE name = 'Barbell Back Squat'")
-            ex1 = cursor.fetchone()[0]
+            r1 = cursor.fetchone()
             cursor.execute("SELECT id FROM exercises WHERE name = 'Standing Calf Raise'")
-            ex2 = cursor.fetchone()[0]
-            cursor.execute("INSERT INTO workout_exercises (workout_id, exercise_id, sets, reps, weight_kg, rest_seconds, completed, notes) VALUES (?, ?, 4, 8, 120.0, 120, 1, 'Deep below parallel')", (w_id, ex1))
-            cursor.execute("INSERT INTO workout_exercises (workout_id, exercise_id, sets, reps, weight_kg, rest_seconds, completed, notes) VALUES (?, ?, 4, 15, 60.0, 60, 1, '1-sec squeeze')", (w_id, ex2))
+            r2 = cursor.fetchone()
+            if r1 and r2:
+                cursor.execute("INSERT INTO workout_exercises (workout_id, exercise_id, sets, reps, weight_kg, rest_seconds, completed, notes) VALUES (?, ?, 4, 8, 120.0, 120, 1, 'Deep below parallel')", (w_id, r1[0]))
+                cursor.execute("INSERT INTO workout_exercises (workout_id, exercise_id, sets, reps, weight_kg, rest_seconds, completed, notes) VALUES (?, ?, 4, 15, 60.0, 60, 1, '1-sec squeeze')", (w_id, r2[0]))
 
     # Link demo user to default plan
     cursor.execute("SELECT id FROM workout_plans LIMIT 1")

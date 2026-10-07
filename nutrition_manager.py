@@ -5,7 +5,6 @@ and daily meal logging across Breakfast, Lunch, Dinner, and Snacks.
 """
 
 from datetime import date
-import sqlite3
 import re
 
 # Default nutritional food database (per standard serving size)

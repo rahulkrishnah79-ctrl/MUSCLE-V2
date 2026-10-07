@@ -258,6 +258,7 @@ def calculate_fitness_metrics_values(age, gender, height_cm, weight_kg, training
 def load_logged_in_user():
     """Load logged-in user into flask.g before every request."""
     user_id = session.get('user_id')
+    current_path = request.path
     if user_id is None:
         g.user = None
     else:
@@ -266,8 +267,15 @@ def load_logged_in_user():
         cursor.execute("SELECT * FROM users WHERE id = ?", (user_id,))
         g.user = cursor.fetchone()
         conn.close()
+        lookup_succeeded = g.user is not None
+        logger.info(
+            f"Auth diagnostic: path='{current_path}', is_vercel={is_vercel}, "
+            f"session_has_user_id=True, user_lookup_succeeded={lookup_succeeded}"
+        )
         if g.user is None:
-            logger.warning(f"Session user_id={user_id} not found in database, clearing session")
+            logger.warning(
+                f"Session user_id={user_id} not found in database on path='{current_path}' (is_vercel={is_vercel}), clearing session"
+            )
             session.clear()
 
 def login_required(f):
