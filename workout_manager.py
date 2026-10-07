@@ -766,8 +766,8 @@ def toggle_exercise_completion_status(workout_id, exercise_id, completed_status,
 def calculate_dashboard_workout_stats(user_id, training_days_target=4):
     """
     Computes:
-    - Weekly workout count (completed this Mon-Sun week vs target)
-    - Active workout streak (consecutive active training days)
+    - Weekly workout count
+    - Active workout streak
     - Total workouts completed
     - Total volume lifted
     """
@@ -778,7 +778,7 @@ def calculate_dashboard_workout_stats(user_id, training_days_target=4):
     # Calculate start of this calendar week (Monday)
     start_of_week = today - timedelta(days=today.weekday())
 
-        cursor.execute("""
+    cursor.execute("""
         SELECT COUNT(*) as weekly_count
         FROM workouts
         WHERE user_id = ? AND date >= ? AND status = 'completed'
@@ -786,7 +786,7 @@ def calculate_dashboard_workout_stats(user_id, training_days_target=4):
 
     weekly_count = cursor.fetchone()['weekly_count']
 
-    # Total completed workouts & volume
+    # Total completed workouts and volume
     cursor.execute("""
         SELECT COUNT(*) as total_completed,
                COALESCE(SUM(total_volume_kg), 0) as total_volume
@@ -816,27 +816,29 @@ def calculate_dashboard_workout_stats(user_id, training_days_target=4):
     if dates:
         check_date = today
 
-        # If no workout today, check if yesterday was completed
+        # If no workout today, check yesterday
         if check_date not in dates:
             check_date = today - timedelta(days=1)
 
         while check_date in dates:
             streak += 1
             check_date -= timedelta(days=1)
-        
-        while check_date in dates:
-            streak += 1
-            check_date -= timedelta(days=1)
 
-    # If streak is 0 but user has completed workouts this week, establish a baseline consistency
+    # Fallback for workouts completed this week
     if streak == 0 and weekly_count > 0:
         streak = weekly_count
 
     conn.close()
+
+    target = training_days_target or 4
+
     return {
         'weekly_count': weekly_count,
-        'weekly_target': training_days_target or 4,
-        'weekly_pct': min(100, int((weekly_count / (training_days_target or 4)) * 100)),
+        'weekly_target': target,
+        'weekly_pct': min(
+            100,
+            int((weekly_count / target) * 100)
+        ),
         'streak': streak,
         'total_completed': overall['total_completed'],
         'total_volume': overall['total_volume']
